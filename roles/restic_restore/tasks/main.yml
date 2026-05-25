@@ -1,6 +1,6 @@
-# SPDX-License-Identifier: MIT-0
+# SPDX-License-Identifier: MIT
 ---
-# tasks file for ansible_restic_restore
+# tasks file for restic_restore
 
 - name: Get SELinux mode
   ansible.builtin.command:

@@ -1,180 +1,87 @@
-# Ansible Role: ansible_ssl_cloudflare
+# danmwallace.linux.cloudflare_ssl
 
-Automated SSL certificate generation using Cloudflare DNS validation with Let's Encrypt.
+Obtains a Let's Encrypt certificate for the managed host using the
+[Cloudflare DNS-01 challenge](https://certbot-dns-cloudflare.readthedocs.io/).
+It installs certbot and the `certbot-dns-cloudflare` plugin, writes the
+Cloudflare API token to `/root/.secrets/cloudflare.ini` (mode `0400`), then runs
+`certbot certonly --dns-cloudflare` for `inventory_hostname`. Because validation
+happens over DNS, the host never needs ports 80/443 exposed. Certificates land in
+the standard certbot location, `/etc/letsencrypt/live/<inventory_hostname>/`.
 
-## Description
-
-This role automates the process of obtaining SSL/TLS certificates from Let's Encrypt using Cloudflare DNS-01 challenge validation. This method is ideal for obtaining wildcard certificates and doesn't require exposing ports 80/443 publicly.
+Supports Ubuntu/Debian (apt, `certbot`) and Fedora Server (dnf, `certbot-3`). The
+commented-out `rpm_ostree_pkg` block hints at Fedora Atomic/IoT support that is
+not currently wired up.
 
 ## Requirements
 
-- Ansible 2.15+
-- Target OS: Ubuntu 20.04+, Debian 11+
-- Cloudflare account with domain managed by Cloudflare
-- Cloudflare API token with DNS edit permissions
-- `certbot` installed (handled by role or `ansible_common`)
+- Ansible >= 2.16 (collection `requires_ansible`)
+- Target host: Ubuntu/Debian or Fedora Server
+- A domain managed in Cloudflare, plus a Cloudflare API token scoped to **DNS
+  edit** for that zone
+- Outbound network access to Let's Encrypt and the Cloudflare API
 
 ## Role Variables
 
-### Required Variables
+Validated by `meta/argument_specs.yml`. Note these variables are **not** prefixed
+with the role name (`cloudflare_ssl_*`), which deviates from the workspace
+convention — they are consumed verbatim by the tasks and the `cloudflare.ini.j2`
+template, so renaming requires editing the role.
 
-```yaml
-# Cloudflare API token
-cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
+| Variable | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `vault_cloudflare_dns_api_token` | str | yes | _(empty)_ | Cloudflare API token with DNS edit scope; written into `cloudflare.ini`. **Supply from vault.** |
+| `vault_cloudflare_dns_email` | str | yes | _(empty)_ | Email passed to `certbot --email` for the ACME account / expiry notices. **Supply from vault.** |
+| `common_debian_packages` | list | no | `[python3-certbot, python3-certbot-dns-cloudflare]` | Apt packages installed on Ubuntu/Debian. |
+| `common_fedora_packages` | list | no | `[python3-certbot, python3-certbot-dns-cloudflare]` | Dnf packages installed on Fedora. |
 
-# Email for Let's Encrypt notifications
-cloudflare_email: "admin@example.com"
-
-# Domain(s) to request certificates for
-cloudflare_domains:
-  - "example.com"
-  - "*.example.com"
-```
-
-### Optional Variables
-
-```yaml
-# Certificate storage path
-cloudflare_cert_path: "/etc/letsencrypt/live"
-
-# Certbot configuration path
-cloudflare_config_path: "/etc/letsencrypt"
-
-# Let's Encrypt server (production or staging)
-cloudflare_acme_server: "https://acme-v02.api.letsencrypt.org/directory"
-```
+The certificate is always requested for `inventory_hostname`; there is no
+variable to override the domain or request a wildcard.
 
 ## Dependencies
 
-None.
+None declared in `meta/main.yml`.
 
 ## Example Playbook
 
 ```yaml
----
-- name: Generate SSL certificates
-  hosts: web_servers
+- hosts: web
   become: true
   roles:
-    - role: ansible_ssl_cloudflare
+    - role: danmwallace.linux.cloudflare_ssl
+      vars:
+        vault_cloudflare_dns_email: "{{ vault_cloudflare_dns_email }}"
+        vault_cloudflare_dns_api_token: "{{ vault_cloudflare_dns_api_token }}"
 ```
 
-### With Group Variables (Recommended)
+Keep the real values in an encrypted vault file:
 
 ```yaml
-# inventories/production/group_vars/webservers/ssl.yml
-cloudflare_email: "sysadmin@example.com"
-cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
-cloudflare_domains:
-  - "example.com"
-  - "*.example.com"
-
-# inventories/production/group_vars/webservers/vault.yml (encrypted)
-vault_cloudflare_api_token: "your_cloudflare_api_token_here"
+# group_vars/web/vault.yml (ansible-vault encrypted)
+vault_cloudflare_dns_email: "sysadmin@example.com"
+vault_cloudflare_dns_api_token: "your-cloudflare-dns-edit-token"
 ```
 
-## What This Role Does
+## What the Role Does
 
-1. Installs certbot and Cloudflare DNS plugin
-2. Creates Cloudflare credentials file
-3. Requests certificate using DNS-01 challenge
-4. Configures automatic certificate renewal
-5. Sets appropriate file permissions
+1. Installs certbot and the Cloudflare DNS plugin — apt on Ubuntu/Debian, dnf on
+   Fedora.
+2. Creates `/root/.secrets` (mode `0700`).
+3. Renders `cloudflare.ini.j2` to `/root/.secrets/cloudflare.ini` (mode `0400`)
+   containing the API token.
+4. Runs `certbot certonly --dns-cloudflare` for `inventory_hostname`
+   (`certbot-3` on Fedora, `certbot` on Ubuntu/Debian), writing the certificate
+   to `/etc/letsencrypt/live/<inventory_hostname>/`.
 
-## DNS-01 Challenge Benefits
+## Notes
 
-- **Wildcard Certificates**: Can issue `*.example.com` certificates
-- **No Port Exposure**: Doesn't require opening ports 80/443
-- **Behind Firewall**: Works for internal-only servers
-- **Validation**: Proves domain ownership via DNS records
-
-## Certificate Renewal
-
-Certificates are automatically renewed by certbot's systemd timer. The role ensures:
-- Renewal happens 30 days before expiration
-- DNS credentials are available for renewal
-- Certificates are validated after renewal
-
-## File Locations
-
-After successful deployment:
-```
-/etc/letsencrypt/
-├── live/
-│   └── example.com/
-│       ├── fullchain.pem  # Certificate + chain
-│       ├── privkey.pem    # Private key
-│       ├── cert.pem       # Certificate only
-│       └── chain.pem      # Intermediate chain
-└── renewal/
-    └── example.com.conf   # Renewal configuration
-```
-
-## Tags
-
-- `ssl` - SSL-related tasks
-- `cloudflare` - Cloudflare-specific tasks
-- `certificates` - Certificate tasks
-
-## Using Certificates
-
-### With Nginx
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name example.com;
-    
-    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
-}
-```
-
-### With Apache
-
-```apache
-<VirtualHost *:443>
-    ServerName example.com
-    SSLEngine on
-    SSLCertificateFile /etc/letsencrypt/live/example.com/cert.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/example.com/privkey.pem
-    SSLCertificateChainFile /etc/letsencrypt/live/example.com/chain.pem
-</VirtualHost>
-```
-
-## Troubleshooting
-
-### Certificate Request Fails
-
-1. Verify Cloudflare API token has DNS edit permissions
-2. Check domain is in Cloudflare account
-3. Ensure DNS is propagated
-4. Review certbot logs: `/var/log/letsencrypt/letsencrypt.log`
-
-### Renewal Fails
-
-1. Check Cloudflare API token is still valid
-2. Verify credentials file exists and is readable
-3. Test renewal manually: `certbot renew --dry-run`
-
-## Security Notes
-
-- Store Cloudflare API token in Ansible Vault
-- Use API tokens (not Global API Key)
-- Restrict token permissions to DNS edit only
-- Set appropriate file permissions (600 for private keys)
-- Rotate API tokens periodically
-
-## Let's Encrypt Rate Limits
-
-Be aware of Let's Encrypt rate limits:
-- 50 certificates per domain per week
-- Use staging server for testing: `cloudflare_acme_server: "https://acme-staging-v02.api.letsencrypt.org/directory"`
+- **Not idempotent on the issuance step.** The certbot tasks use
+  `ansible.builtin.shell` with no `changed_when`/`creates`, so they report
+  `changed` and re-invoke certbot on every run. certbot itself is a no-op when
+  the cert is still valid, but the task will not pass a clean second-run check.
+- Renewal is left to certbot's own systemd timer; this role does not install a
+  separate renewal unit. The companion `danmwallace.linux.cockpit` role installs
+  a post-renewal hook for Cockpit.
 
 ## License
 
 MIT
-
-## Author
-
-Dan Wallace

@@ -1,86 +1,79 @@
-# Ansible Role: ansible_common_cockpit
+# danmwallace.linux.cockpit
 
-Deploy and configure Cockpit web-based system management interface with SSL certificate support.
+Configures TLS for an already-installed [Cockpit](https://cockpit-project.org/)
+by copying a Let's Encrypt certificate and key into Cockpit's certificate
+directory (`/etc/cockpit/ws-certs.d` by default), then enabling and starting the
+`cockpit` service. It also installs a certbot renewal hook so the certificate is
+re-copied and Cockpit restarted after each renewal. On Ubuntu/Debian it sets
+`cockpit-ws` ownership on the cert files and opens TCP 9090 in UFW.
 
-## Description
-
-This role deploys [Cockpit](https://cockpit-project.org/), a web-based interface for managing Linux servers. Cockpit provides an easy-to-use dashboard for system monitoring, service management, storage administration, and more.
+This role does **not** install Cockpit, and it does **not** obtain the
+certificate — it expects both to already be in place. Pair it with
+`danmwallace.linux.cloudflare_ssl` (or any certbot flow) to produce the
+certificate first.
 
 ## Requirements
 
-- Ansible 2.15+
-- Target OS: Ubuntu 20.04+, Debian 11+, Fedora 38+
-- Port 9090 accessible
+- Ansible >= 2.16 (collection `requires_ansible`)
+- `community.general` (for the UFW task on Ubuntu)
+- Target host: Fedora, Ubuntu, or Debian with **Cockpit already installed**
+- A Let's Encrypt certificate already present at
+  `{{ cockpit_letsencrypt_cert_path }}` (i.e. `fullchain.pem` and `privkey.pem`)
 
 ## Role Variables
 
-### Optional Variables
+Validated by `meta/argument_specs.yml`. All variables have defaults.
 
-```yaml
-# Cockpit SSL certificate directory
-common_cockpit_cert_dir: "/etc/cockpit/ws-certs.d"
-
-# Certificate paths (if using custom SSL)
-cockpit_cert_file: "/path/to/cert.pem"
-cockpit_key_file: "/path/to/privkey.pem"
-```
+| Variable | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `cockpit_hostname` | str | no | `{{ inventory_hostname }}` | Hostname used to name the copied cert/key files (`<hostname>.crt` / `.key`) and the default LE cert path. |
+| `cockpit_letsencrypt_cert_path` | str | no | `/etc/letsencrypt/live/{{ cockpit_hostname }}` | Source directory holding `fullchain.pem` and `privkey.pem`. |
+| `cockpit_cert_path` | str | no | `/etc/cockpit/ws-certs.d` | Directory Cockpit reads its TLS material from; the cert/key are copied here. |
 
 ## Dependencies
 
-None.
+None declared in `meta/main.yml`. In practice the target host must already have
+Cockpit installed and a Let's Encrypt certificate present at
+`cockpit_letsencrypt_cert_path` — typically produced by
+`danmwallace.linux.cloudflare_ssl`.
 
 ## Example Playbook
 
 ```yaml
----
-- name: Deploy Cockpit
-  hosts: servers
+- hosts: management
   become: true
   roles:
-    - ansible_common
-    - ansible_common_cockpit
+    - role: danmwallace.linux.cloudflare_ssl
+    - role: danmwallace.linux.cockpit
+      vars:
+        cockpit_hostname: cockpit.example.com
 ```
 
-## What This Role Does
+## What the Role Does
 
-1. Installs Cockpit package and dependencies
-2. Enables and starts cockpit.socket
-3. Configures SSL certificates (if provided)
-4. Opens firewall port (if firewall active)
+1. Ensures the Cockpit certificate directory (`cockpit_cert_path`) exists.
+2. Copies `fullchain.pem` to `<cockpit_cert_path>/<cockpit_hostname>.crt` and
+   `privkey.pem` to `<cockpit_cert_path>/<cockpit_hostname>.key` from
+   `cockpit_letsencrypt_cert_path` (remote-to-remote copy).
+3. On Ubuntu/Debian, sets `cockpit-ws:cockpit-ws` ownership on the cert and key.
+4. Installs a certbot post-renewal hook at
+   `/etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh` that re-copies
+   the cert/key and restarts Cockpit (the Ubuntu/Debian variant also re-applies
+   `cockpit-ws` ownership).
+5. Enables and starts the `cockpit` service.
+6. On Ubuntu, opens TCP 9090 in UFW (notifies the `Restart cockpit` handler).
 
-## Cockpit Features
+A `Restart cockpit` handler restarts the service; it is notified only by the
+Ubuntu UFW rule task.
 
-- **System Monitoring**: CPU, memory, disk, network usage
-- **Service Management**: Systemd service control
-- **Storage Administration**: Disk and partition management
-- **Container Management**: Podman/Docker container control
-- **Terminal Access**: Web-based terminal
-- **Log Viewer**: System journal logs
-- **User Management**: User and group administration
+## Notes
 
-## Access
-
-After deployment:
-- HTTP: `http://server-ip:9090`
-- HTTPS: `https://server-hostname:9090`
-
-Login with any sudo-enabled system user account.
-
-## Security Notes
-
-- Use SSL certificates in production
-- Restrict firewall access to trusted networks
-- Use strong passwords for user accounts
-
-## Tags
-
-- `cockpit` - Cockpit tasks
-- `monitoring` - Monitoring tasks
+- Cockpit listens on TCP **9090**. Only the Ubuntu path opens the firewall; on
+  Fedora/Debian, open 9090 yourself if a firewall is active.
+- The renewal hook is written per-distro (`when: Fedora` vs `when:
+  Ubuntu/Debian`), so a single host installs only the hook variant matching its
+  distribution.
 
 ## License
 
 MIT
-
-## Author
-
-Dan Wallace

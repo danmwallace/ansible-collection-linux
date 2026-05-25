@@ -1,24 +1,30 @@
 ---
+# SPDX-License-Identifier: MIT
 galaxy_info:
-  role_name: ansible_ssl_cloudflare
+  role_name: cloudflare_ssl
+  namespace: danmwallace
   author: Dan Wallace
-  description: Automated SSL certificate generation using Cloudflare DNS validation
+  description: Obtain a Let's Encrypt certificate via the Cloudflare DNS-01 challenge using certbot.
   license: MIT
-  min_ansible_version: "2.15"
-
+  min_ansible_version: "2.16"
   platforms:
+    - name: Debian
+      versions:
+        - bookworm
     - name: Ubuntu
       versions:
         - focal
         - jammy
         - noble
-
+    - name: Fedora
+      versions:
+        - all
   galaxy_tags:
-    - homelab
     - ssl
+    - tls
     - letsencrypt
     - cloudflare
+    - certbot
     - dns
-    - certificates
 
 dependencies: []

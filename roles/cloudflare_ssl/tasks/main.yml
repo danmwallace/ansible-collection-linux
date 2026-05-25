@@ -1,5 +1,5 @@
 ---
-# tasks file for cloudflare-ssl
+# tasks file for cloudflare_ssl
 
 # #######################################
 # Ubuntu/Debian specific

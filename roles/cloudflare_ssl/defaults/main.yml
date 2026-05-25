@@ -1,5 +1,5 @@
 ---
-# defaults file for cloudflare-ssl
+# defaults file for cloudflare_ssl
 vault_cloudflare_dns_email:
 vault_cloudflare_dns_api_token:
 common_debian_packages:

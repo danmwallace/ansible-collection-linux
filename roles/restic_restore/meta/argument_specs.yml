@@ -1,0 +1,51 @@
+---
+argument_specs:
+  main:
+    short_description: Restore the latest Restic snapshot from a Backblaze B2 repository.
+    description:
+      - Creates the restore path, restores the C(latest) Restic snapshot from a
+        Backblaze B2 backend into it, fixes ownership, and restores SELinux
+        contexts. On enforcing hosts it drops to permissive for the restore and
+        re-enables enforcing afterward.
+      - "Note: several inputs are not prefixed with the role name
+        (C(b2_account_id), C(b2_account_key), C(restore_path), C(target_user)),
+        which deviates from the workspace convention of role-prefixed variables.
+        They are documented as-is to match the role's tasks and README."
+    author: Dan Wallace
+    options:
+      restic_repository:
+        description:
+          - Restic repository URL (for example C(b2:bucket:path/)). Exported to
+            the restore step as C(RESTIC_REPOSITORY).
+        type: str
+        required: true
+      restic_password:
+        description:
+          - Password for the Restic repository. Exported as C(RESTIC_PASSWORD).
+            Supply from an encrypted vault.
+        type: str
+        required: true
+      b2_account_id:
+        description:
+          - Backblaze B2 account or key ID. Exported as C(B2_ACCOUNT_ID). Supply
+            from an encrypted vault. Not role-prefixed (deviates from convention).
+        type: str
+        required: true
+      b2_account_key:
+        description:
+          - Backblaze B2 application key. Exported as C(B2_ACCOUNT_KEY). Supply
+            from an encrypted vault. Not role-prefixed (deviates from convention).
+        type: str
+        required: true
+      restore_path:
+        description:
+          - Directory the snapshot is restored into. It is created and chowned to
+            C(target_user). Not role-prefixed (deviates from convention).
+        type: path
+        required: true
+      target_user:
+        description:
+          - User and group that owns the restore path and the restored files.
+            Not role-prefixed (deviates from convention).
+        type: str
+        required: true

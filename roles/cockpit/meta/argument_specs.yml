@@ -1,0 +1,30 @@
+---
+argument_specs:
+  main:
+    short_description: Configure TLS for an existing Cockpit installation.
+    description:
+      - Copies a Let's Encrypt certificate and key into Cockpit's certificate
+        directory, installs a certbot renewal hook, and enables the cockpit service.
+    author: Dan Wallace [danmwallace]
+    options:
+      cockpit_hostname:
+        description:
+          - Hostname used to name the copied cert/key files
+            (C(<hostname>.crt) / C(<hostname>.key)) and to build the default
+            Let's Encrypt certificate path.
+        type: str
+        required: false
+        default: "{{ inventory_hostname }}"
+      cockpit_letsencrypt_cert_path:
+        description:
+          - Source directory holding C(fullchain.pem) and C(privkey.pem).
+        type: path
+        required: false
+        default: "/etc/letsencrypt/live/{{ cockpit_hostname }}"
+      cockpit_cert_path:
+        description:
+          - Directory Cockpit reads its TLS material from; the cert and key are
+            copied here.
+        type: path
+        required: false
+        default: "/etc/cockpit/ws-certs.d"
