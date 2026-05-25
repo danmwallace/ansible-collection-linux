@@ -1,0 +1,27 @@
+---
+galaxy_info:
+  role_name: raspberry_pi_network_toolkit
+  author: Network Engineer
+  license: MIT
+  description: Configure a Raspberry Pi as a portable network diagnostics and reconnaissance toolkit
+  min_ansible_version: "2.9"
+
+  platforms:
+    - name: Debian
+      versions:
+        - buster # 10
+        - bullseye # 11
+        - bookworm # 12
+    - name: Ubuntu
+      versions:
+        - focal # 20.04
+        - jammy # 22.04
+
+  galaxy_tags:
+    - networking
+    - security
+    - raspberry_pi
+    - docker
+    - monitoring
+
+dependencies: []

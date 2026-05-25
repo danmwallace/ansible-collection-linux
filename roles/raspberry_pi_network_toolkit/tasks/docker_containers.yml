@@ -1,0 +1,34 @@
+---
+# tasks/docker_containers.yml - Deploy monitoring containers
+
+- name: Create docker compose directory
+  ansible.builtin.file:
+    path: /opt/docker-compose
+    state: directory
+    owner: "{{ toolkit_user }}"
+    mode: "0755"
+  become: true
+  when: install_docker and enable_monitoring
+
+- name: Create external docker network for Traefik
+  community.docker.docker_network:
+    name: proxy_network
+    state: present
+  become: true
+  when: install_docker and enable_monitoring
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/docker-compose/docker-compose.yml
+    owner: "{{ toolkit_user }}"
+    mode: "0644"
+  become: true
+  when: install_docker and enable_monitoring
+
+- name: Start monitoring containers
+  community.docker.docker_compose_v2:
+    project_src: /opt/docker-compose
+    state: present
+  become: true
+  when: install_docker and enable_monitoring

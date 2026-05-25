@@ -1,0 +1,31 @@
+# Tmux configuration for network toolkit
+
+# Set prefix to Ctrl-a
+set -g prefix C-a
+unbind C-b
+bind C-a send-prefix
+
+# Split panes using | and -
+bind | split-window -h
+bind - split-window -v
+unbind '"'
+unbind %
+
+# Reload config
+bind r source-file ~/.tmux.conf
+
+# Enable mouse
+set -g mouse on
+
+# Don't rename windows automatically
+set-option -g allow-rename off
+
+# Status bar
+set -g status-position bottom
+set -g status-style 'bg=colour234 fg=colour137'
+set -g status-left '#[fg=colour233,bg=colour245,bold] #H '
+set -g status-right '#[fg=colour233,bg=colour241,bold] %d/%m #[fg=colour233,bg=colour245,bold] %H:%M:%S '
+
+# Start windows and panes at 1, not 0
+set -g base-index 1
+setw -g pane-base-index 1

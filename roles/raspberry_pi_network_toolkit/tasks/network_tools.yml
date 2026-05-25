@@ -1,0 +1,45 @@
+---
+# tasks/network_tools.yml - Install network diagnostic tools
+
+- name: Install network diagnostic tools
+  ansible.builtin.apt:
+    pkg:
+      - nmap
+      - tcpdump
+      - netcat-openbsd
+      - hping3
+      - arp-scan
+      - masscan
+      - mtr
+      - iperf3
+      - bmon
+      - iftop
+      - nethogs
+      - vnstat
+      - dnsutils
+      - whois
+      - traceroute
+      - net-tools
+      - iproute2
+      - iputils-ping
+      - socat
+      - telnet
+      - smbclient
+      - snmp
+      - ldap-utils
+      - wget
+    state: present
+  become: true
+
+- name: Install wireless tools
+  ansible.builtin.apt:
+    pkg: "{{ item }}"
+    state: present
+  become: true
+  loop:
+    - aircrack-ng
+    - kismet
+    - wavemon
+    - wireless-tools
+  when: ansible_facts['os_family'] == "Debian"
+  ignore_errors: true

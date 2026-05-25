@@ -1,0 +1,26 @@
+---
+# tasks/main.yml - Main task entry point
+
+- name: Include prerequisites
+  ansible.builtin.include_tasks: prerequisites.yml
+
+- name: Include network tools
+  ansible.builtin.include_tasks: network_tools.yml
+
+- name: Include security tools
+  ansible.builtin.include_tasks: security_tools.yml
+
+- name: Include monitoring tools
+  ansible.builtin.include_tasks: monitoring_tools.yml
+
+- name: Include Docker setup
+  ansible.builtin.include_tasks: docker_setup.yml
+
+- name: Include Docker containers
+  ansible.builtin.include_tasks: docker_containers.yml
+
+- name: Include scripts
+  ansible.builtin.include_tasks: scripts.yml
+
+- name: Include configuration
+  ansible.builtin.include_tasks: configuration.yml

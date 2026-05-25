@@ -1,0 +1,36 @@
+#!/bin/bash
+# Quick network audit script
+# Usage: quick-audit.sh <target_ip>
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <target_ip>"
+    exit 1
+fi
+
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run with sudo for full functionality"
+    exit 1
+fi
+
+TARGET="$1"
+RESULTS_DIR="{{ toolkit_scripts_dir }}/results"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+REPORT_FILE="${RESULTS_DIR}/audit_${TARGET}_${TIMESTAMP}.txt"
+
+mkdir -p "$RESULTS_DIR"
+
+echo "=== Quick Network Audit ===" | tee "$REPORT_FILE"
+echo "Target: $TARGET" | tee -a "$REPORT_FILE"
+echo "Date: $(date)" | tee -a "$REPORT_FILE"
+echo "===========================" | tee -a "$REPORT_FILE"
+
+echo -e "\n[*] Running port scan..." | tee -a "$REPORT_FILE"
+nmap -sS -sV -O --top-ports 1000 "$TARGET" | tee -a "$REPORT_FILE"
+
+echo -e "\n[*] Checking SSL/TLS..." | tee -a "$REPORT_FILE"
+sslscan "$TARGET" 2>/dev/null | tee -a "$REPORT_FILE"
+
+echo -e "\n[*] Running Lynis quick scan..." | tee -a "$REPORT_FILE"
+lynis audit system --quick --no-colors 2>/dev/null | tee -a "$REPORT_FILE"
+
+echo -e "\n[*] Audit complete. Results saved to: $REPORT_FILE"

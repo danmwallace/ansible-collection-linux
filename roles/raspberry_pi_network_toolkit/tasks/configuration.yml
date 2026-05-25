@@ -1,0 +1,17 @@
+---
+# tasks/configuration.yml - Deploy configuration files
+
+- name: Configure tmux
+  ansible.builtin.template:
+    src: tmux.conf.j2
+    dest: "/home/{{ toolkit_user }}/.tmux.conf"
+    owner: "{{ toolkit_user }}"
+    mode: "0644"
+  become: true
+
+- name: Set up log rotation
+  ansible.builtin.template:
+    src: logrotate.conf.j2
+    dest: /etc/logrotate.d/network-toolkit
+    mode: "0644"
+  become: true

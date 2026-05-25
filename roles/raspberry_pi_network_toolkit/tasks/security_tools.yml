@@ -1,0 +1,29 @@
+---
+# tasks/security_tools.yml - Install security scanning tools
+
+- name: Install security scanning tools
+  ansible.builtin.apt:
+    pkg:
+      - nikto
+      - lynis
+      - sslscan
+      - hydra
+      - john
+      - hashcat
+    state: present
+  become: true
+
+- name: Install testssl.sh
+  ansible.builtin.git:
+    repo: https://github.com/drwetter/testssl.sh.git
+    dest: /opt/testssl.sh
+    version: HEAD
+  become: true
+
+- name: Create testssl symlink
+  ansible.builtin.file:
+    src: /opt/testssl.sh/testssl.sh
+    dest: /usr/local/bin/testssl
+    state: link
+    force: true
+  become: true

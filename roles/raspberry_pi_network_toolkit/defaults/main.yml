@@ -1,0 +1,32 @@
+---
+# defaults/main.yml - Default variables for raspberry_pi_network_toolkit
+
+# User who will run the toolkit
+toolkit_user: pi
+
+# Whether to install Docker and Docker Compose
+install_docker: true
+
+# Whether to install GUI-based tools
+install_gui_tools: false
+
+# Docker Compose version to install
+docker_compose_version: "v2.23.0"
+
+# Whether to deploy monitoring containers
+enable_monitoring: true
+
+# Ports for monitoring services
+monitoring_ports:
+  portainer: 9000
+  netdata: 19999
+  uptime_kuma: 3001
+  wireshark_web: 3000
+
+# Directory for custom toolkit scripts
+toolkit_scripts_dir: /opt/network-toolkit
+
+# Service hostnames for Traefik reverse proxy
+portainer_hostname: "portainer.example.com"
+netdata_hostname: "netdata.example.com"
+uptime_kuma_hostname: "uptime.example.com"

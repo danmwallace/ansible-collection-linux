@@ -1,0 +1,83 @@
+---
+# ###############################################################
+# Setup Cockpit with TLS
+
+# Currently the variables are a bit funny because they're prefixed with cockpit_cockpit
+# It is best practice to prefix a variable in a role with the role name, so this is just an ugly semantic consequence
+# cockpit_letsencrypt_cert_path = path that letsencrypt certs are stored
+# cockpit_cert_path = the directory cockpit uses for cert storage
+- name: "(General) Ensure Cockpit certificate directory exists"
+  ansible.builtin.file:
+    path: "{{ cockpit_cert_path }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: "(General) Copy SSL certificate to Cockpit directory"
+  ansible.builtin.copy:
+    src: "{{ cockpit_letsencrypt_cert_path }}/fullchain.pem"
+    dest: "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt"
+    remote_src: true
+    mode: "640"
+  become: true
+
+- name: "(General) Copy SSL private key to Cockpit directory"
+  ansible.builtin.copy:
+    src: "{{ cockpit_letsencrypt_cert_path }}/privkey.pem"
+    dest: "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.key"
+    remote_src: true
+    mode: "600"
+  become: true
+
+- name: (Debian) Set proper ownership for SSL files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: cockpit-ws
+    group: cockpit-ws
+    mode: "0600"
+  loop:
+    - "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt"
+    - "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.key"
+  become: true
+  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
+
+- name: "(General) Create renewal hook script"
+  ansible.builtin.copy:
+    content: |
+      #!/bin/bash
+      cp {{ cockpit_letsencrypt_cert_path }}/fullchain.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt
+      cp {{ cockpit_letsencrypt_cert_path }}/privkey.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.key
+      systemctl restart cockpit
+    dest: /etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh
+    mode: "0755"
+  become: true
+  when: ansible_facts.distribution == "Fedora"
+
+- name: "(General) Create renewal hook script"
+  ansible.builtin.copy:
+    content: |
+      #!/bin/bash
+      cp {{ cockpit_letsencrypt_cert_path }}/fullchain.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt
+      cp {{ cockpit_letsencrypt_cert_path }}/privkey.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.key
+      chown cockpit-ws:cockpit-ws {{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt {{ cockpit_cert_path }}/{{ cockpit_hostname }}.key
+      systemctl restart cockpit
+    dest: /etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh
+    mode: "0755"
+  become: true
+  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
+
+- name: "(General) Enable cockpit service"
+  ansible.builtin.service:
+    name: cockpit
+    state: started
+    enabled: true
+  become: true
+
+- name: "(Ubuntu) Allow 9090 in UFW for cockpit"
+  community.general.ufw:
+    rule: allow
+    port: "9090"
+    proto: tcp
+  become: true
+  notify: Restart cockpit # Execute handler in handlers/main.yml
+  when: ansible_facts['os_family'] == "Debian" and ansible_facts['distribution'] == "Ubuntu"

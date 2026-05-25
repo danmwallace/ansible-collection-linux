@@ -1,0 +1,6 @@
+---
+# defaults file for cockpit
+
+cockpit_hostname: "{{ inventory_hostname }}" # Default to inventory_hostname if none provided in playbook
+cockpit_letsencrypt_cert_path: "/etc/letsencrypt/live/{{ cockpit_hostname }}"
+cockpit_cert_path: "/etc/cockpit/ws-certs.d"

@@ -1,0 +1,62 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ansible-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout into collection path
+        uses: actions/checkout@v4
+        with:
+          path: ansible_collections/danmwallace/linux
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install ansible-dev-tools
+        run: pip install ansible-dev-tools
+      - name: Install collection dependencies
+        working-directory: ansible_collections/danmwallace/linux
+        run: |
+          if [ -f requirements.yml ]; then
+            ansible-galaxy collection install -r requirements.yml
+          fi
+      - name: Run ansible-lint
+        working-directory: ansible_collections/danmwallace/linux
+        run: ansible-lint
+
+  build:
+    name: build-collection
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout into collection path
+        uses: actions/checkout@v4
+        with:
+          path: ansible_collections/danmwallace/linux
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ansible-core
+        run: pip install ansible-core
+      - name: Build collection
+        working-directory: ansible_collections/danmwallace/linux
+        run: ansible-galaxy collection build --output-path dist/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-tarball
+          path: ansible_collections/danmwallace/linux/dist/*.tar.gz
+          retention-days: 7

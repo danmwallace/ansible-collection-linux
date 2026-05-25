@@ -1,0 +1,92 @@
+#!/bin/bash
+# Network scanning utility script
+
+echo "=== Network Toolkit Scanner ==="
+echo "Date: $(date)"
+echo "Hostname: $(hostname)"
+echo "================================"
+
+# Function to check if running as root
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo "Please run with sudo for full functionality"
+        exit 1
+    fi
+}
+
+# Function to scan local network
+scan_local() {
+    echo -e "\n[*] Scanning local network..."
+
+    # Get network interface
+    INTERFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
+    echo "Interface: $INTERFACE"
+
+    # Get IP range
+    IP_RANGE=$(ip -o -f inet addr show $INTERFACE | awk '/scope global/ {print $4}')
+    echo "IP Range: $IP_RANGE"
+
+    # ARP scan
+    echo -e "\n[*] ARP Scan Results:"
+    arp-scan --local --interface=$INTERFACE
+
+    # Quick nmap scan
+    echo -e "\n[*] Quick Nmap Scan:"
+    nmap -sn $IP_RANGE
+}
+
+# Function for port scan
+port_scan() {
+    read -p "Enter target IP: " TARGET
+    echo -e "\n[*] Scanning ports on $TARGET..."
+    nmap -sV -sC -O -A $TARGET
+}
+
+# Function for quick audit
+quick_audit() {
+    read -p "Enter target IP: " TARGET
+    echo -e "\n[*] Running quick audit on $TARGET..."
+
+    # Basic port scan
+    echo "[*] Open ports:"
+    nmap -sS -p- --min-rate=1000 $TARGET
+
+    # Service detection
+    echo -e "\n[*] Service detection:"
+    nmap -sV $TARGET
+
+    # Check for common vulnerabilities
+    echo -e "\n[*] Checking for common issues..."
+    nmap --script vuln $TARGET
+}
+
+# Menu
+echo -e "\nSelect operation:"
+echo "1) Scan local network"
+echo "2) Port scan specific host"
+echo "3) Quick security audit"
+echo "4) Exit"
+
+read -p "Choice: " choice
+
+case $choice in
+    1)
+        check_root
+        scan_local
+        ;;
+    2)
+        check_root
+        port_scan
+        ;;
+    3)
+        check_root
+        quick_audit
+        ;;
+    4)
+        exit 0
+        ;;
+    *)
+        echo "Invalid choice"
+        exit 1
+        ;;
+esac

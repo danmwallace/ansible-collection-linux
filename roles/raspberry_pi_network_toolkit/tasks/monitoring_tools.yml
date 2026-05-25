@@ -1,0 +1,16 @@
+---
+# tasks/monitoring_tools.yml - Install system monitoring tools
+
+- name: Install system monitoring tools
+  ansible.builtin.apt:
+    pkg:
+      - htop
+      - btop
+      - glances
+      - dstat
+      - sysstat
+      - lsof
+      - strace
+      - stress-ng
+    state: present
+  become: true

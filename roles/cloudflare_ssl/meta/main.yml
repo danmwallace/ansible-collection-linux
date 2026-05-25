@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: ansible_ssl_cloudflare
+  author: Dan Wallace
+  description: Automated SSL certificate generation using Cloudflare DNS validation
+  license: MIT
+  min_ansible_version: "2.15"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+
+  galaxy_tags:
+    - homelab
+    - ssl
+    - letsencrypt
+    - cloudflare
+    - dns
+    - certificates
+
+dependencies: []

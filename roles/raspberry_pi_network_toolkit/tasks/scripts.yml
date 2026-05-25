@@ -1,0 +1,34 @@
+---
+# tasks/scripts.yml - Deploy custom toolkit scripts
+
+- name: Create toolkit scripts directory
+  ansible.builtin.file:
+    path: "{{ toolkit_scripts_dir }}"
+    state: directory
+    owner: "{{ toolkit_user }}"
+    mode: "0755"
+  become: true
+
+- name: Deploy network scan script
+  ansible.builtin.template:
+    src: network-scan.sh.j2
+    dest: "{{ toolkit_scripts_dir }}/network-scan.sh"
+    owner: "{{ toolkit_user }}"
+    mode: "0755"
+  become: true
+
+- name: Deploy quick audit script
+  ansible.builtin.template:
+    src: quick-audit.sh.j2
+    dest: "{{ toolkit_scripts_dir }}/quick-audit.sh"
+    owner: "{{ toolkit_user }}"
+    mode: "0755"
+  become: true
+
+- name: Add scripts directory to PATH
+  ansible.builtin.lineinfile:
+    path: "/home/{{ toolkit_user }}/.bashrc"
+    line: "export PATH=$PATH:{{ toolkit_scripts_dir }}"
+    owner: "{{ toolkit_user }}"
+    create: true
+  become: true

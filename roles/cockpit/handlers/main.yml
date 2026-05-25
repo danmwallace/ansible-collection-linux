@@ -1,0 +1,7 @@
+---
+# handlers file for cockpit
+
+- name: Restart cockpit
+  service:
+    name: cockpit
+    state: restarted

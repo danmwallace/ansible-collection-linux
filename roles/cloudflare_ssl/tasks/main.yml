@@ -1,0 +1,73 @@
+---
+# tasks file for cloudflare-ssl
+
+# #######################################
+# Ubuntu/Debian specific
+
+- name: (Ubuntu) Install Certbot and Cloudflare plugin for Cloudflare DNS Challenge
+  ansible.builtin.package:
+    name: "{{ common_debian_packages }}"
+    state: present
+  become: true
+  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
+
+########################################
+# Fedora specific
+
+#- name: "(Fedora - Atomic) Install Certbot and Cloudflare plugin for Cloudflare DNS challenge"
+#  community.general.rpm_ostree_pkg:
+#    name: "{{ common_fedora_packages }}"
+#    state: present
+#  become: true
+#  when: ansible_facts['os_family'] == "RedHat" and ansible_facts['distribution'] == "Fedora" and variant_id.stdout == "iot"
+
+- name: (Fedora - Server) Install python3-certbot-dns-cloudflare for Cloudflare DNS challenge
+  ansible.builtin.dnf:
+    name: "{{ common_fedora_packages }}"
+    state: present
+  become: true
+  when: ansible_facts.distribution == "Fedora"
+
+- name: (General) Create directory for Cloudflare credentials
+  ansible.builtin.file:
+    path: /root/.secrets
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: (General) Generate cloudflare.ini file for certbot
+  ansible.builtin.template:
+    src: cloudflare.ini.j2
+    dest: /root/.secrets/cloudflare.ini
+    owner: root
+    group: root
+    mode: "0400"
+  become: true
+
+- name: (Fedora) Generate SSL certificate for "{{ inventory_hostname  }}" using Cloudflare DNS Challenge
+  ansible.builtin.shell: |
+    certbot-3 certonly \
+      --dns-cloudflare \
+      --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
+      --dns-cloudflare-propagation-seconds 60 \
+      --agree-tos \
+      --email {{ vault_cloudflare_dns_email }} \
+      --non-interactive \
+      --domains {{ inventory_hostname }}
+  become: true
+  when: ansible_facts.distribution == "Fedora"
+
+- name: (Debian) Generate SSL certificate for "{{ inventory_hostname  }}" using Cloudflare DNS Challenge
+  ansible.builtin.shell: |
+    certbot certonly \
+      --dns-cloudflare \
+      --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
+      --dns-cloudflare-propagation-seconds 60 \
+      --agree-tos \
+      --email {{ vault_cloudflare_dns_email }} \
+      --non-interactive \
+      --domains {{ inventory_hostname }}
+  become: true
+  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"

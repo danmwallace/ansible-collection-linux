@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: MIT-0
+---
+# tasks file for ansible_restic_restore
+
+- name: Get SELinux mode
+  ansible.builtin.command:
+    cmd: getenforce
+  register: selinux_mode
+  changed_when: false
+  failed_when: false
+
+- name: Temporarily set SELinux to permissive
+  ansible.builtin.command:
+    cmd: setenforce 0
+  become: true
+  when: selinux_mode.stdout == "Enforcing"
+
+- name: Ensure parent directory exists
+  ansible.builtin.file:
+    path: "{{ restore_path }}"
+    state: directory
+    owner: "{{ target_user }}"
+    group: "{{ target_user }}"
+    mode: "0755"
+  become: true
+
+- name: Restore backup with Restic
+  ansible.builtin.shell:
+    cmd: 'restic restore latest --target {{ restore_path }} 2>&1 | grep -v "security.selinux: permission denied" || true'
+  environment:
+    RESTIC_REPOSITORY: "{{ restic_repository }}"
+    RESTIC_PASSWORD: "{{ restic_password }}"
+    B2_ACCOUNT_ID: "{{ b2_account_id }}"
+    B2_ACCOUNT_KEY: "{{ b2_account_key }}"
+  become: true
+  register: restore_output
+  failed_when: false
+
+- name: Show restore output
+  ansible.builtin.debug:
+    var: restore_output.stdout_lines
+  when: restore_output.stdout_lines is defined
+
+- name: Check if restore actually failed
+  ansible.builtin.fail:
+    msg: "Restore failed with errors other than SELinux xattr issues"
+  when:
+    - restore_output.rc != 0
+    - "'security.selinux: permission denied' not in restore_output.stderr"
+
+- name: Fix ownership recursively
+  ansible.builtin.file:
+    path: "{{ restore_path }}"
+    owner: "{{ target_user }}"
+    group: "{{ target_user }}"
+    recurse: true
+  become: true
+
+- name: Restore SELinux contexts
+  ansible.builtin.command:
+    cmd: restorecon -R {{ restore_path }}
+  become: true
+
+- name: Re-enable SELinux enforcing
+  ansible.builtin.command:
+    cmd: setenforce 1
+  become: true
+  when: selinux_mode.stdout == "Enforcing"

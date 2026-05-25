@@ -1,0 +1,30 @@
+---
+# v1.0.0 ships legacy roles migrated from ansible-homelab-roles.
+# Production-profile cleanup is deferred to v1.0.x; these rules are
+# acknowledged-but-not-yet-fixed quality issues.
+profile: basic
+exclude_paths:
+  - .cache/
+  - .github/
+  - molecule/*/files/
+  - roles/*/files/
+  - roles/*/tests/
+use_default_rules: true
+warn_list:
+  - experimental
+  - var-naming[no-role-prefix]
+  - jinja[spacing]
+  - name[template]
+  - yaml[line-length]
+  - yaml[comments]
+  - yaml[trailing-spaces]
+  - yaml[truthy]
+  - yaml[new-line-at-end-of-file]
+  - yaml[document-start]
+  - yaml[empty-lines]
+  - yaml[indentation]
+  - no-changed-when
+  - risky-shell-pipe
+  - ignore-errors
+  - meta-incorrect
+  - fqcn[action-core]
