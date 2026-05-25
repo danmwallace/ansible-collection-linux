@@ -34,5 +34,5 @@ jobs:
       - name: Publish to Galaxy
         working-directory: ansible_collections/danmwallace/linux
         env:
-          ANSIBLE_GALAXY_SERVER_GALAXY_TOKEN: ${{ secrets.GALAXY_API_KEY }}
-        run: ansible-galaxy collection publish dist/*.tar.gz
+          GALAXY_TOKEN: ${{ secrets.GALAXY_API_KEY }}
+        run: ansible-galaxy collection publish dist/*.tar.gz --token "$GALAXY_TOKEN"
