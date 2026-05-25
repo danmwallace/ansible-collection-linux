@@ -1,11 +1,9 @@
 ---
 # defaults file for cloudflare_ssl
-vault_cloudflare_dns_email:
-vault_cloudflare_dns_api_token:
-common_debian_packages:
+cloudflare_ssl_debian_packages:
   - python3-certbot
   - python3-certbot-dns-cloudflare
 
-common_fedora_packages:
+cloudflare_ssl_fedora_packages:
   - python3-certbot
   - python3-certbot-dns-cloudflare

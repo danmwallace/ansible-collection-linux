@@ -1,0 +1,122 @@
+---
+argument_specs:
+  main:
+    short_description: Configure a Raspberry Pi as a portable network diagnostics and reconnaissance toolkit.
+    description:
+      - Installs base prerequisites and a curated set of network diagnostic,
+        security assessment, and system monitoring CLI tools via apt.
+      - Optionally installs Docker CE plus the compose plugin and deploys a
+        monitoring stack (Portainer, Netdata, Uptime Kuma) with
+        community.docker.docker_compose_v2 behind an external Traefik
+        proxy_network.
+      - Renders helper scripts (network-scan.sh, quick-audit.sh) into a
+        configurable directory, and applies tmux and logrotate configuration.
+      - Variable names are intentionally unprefixed (for example C(toolkit_user),
+        C(install_docker)) for backwards compatibility with the role's existing
+        tasks and templates; the no-role-prefix lint warning is acknowledged and
+        warn-listed at the collection level rather than renaming consumed vars.
+    author:
+      - Dan Wallace [danmwallace]
+    options:
+      toolkit_user:
+        description:
+          - Local user that owns the toolkit assets (scripts dir, compose dir,
+            rendered home-directory dotfiles) and is added to the C(docker) group.
+        type: str
+        required: false
+        default: pi
+      install_docker:
+        description:
+          - Whether to add the Docker apt repository, install Docker CE and the
+            compose plugin, add C(toolkit_user) to the docker group, and enable
+            the service. Gates every task in C(docker_setup.yml) and
+            C(docker_containers.yml).
+        type: bool
+        required: false
+        default: true
+      install_gui_tools:
+        description:
+          - Toggle reserved for installing GUI-based tools. Declared for interface
+            completeness; not currently referenced by any task.
+        type: bool
+        required: false
+        default: false
+      docker_compose_version:
+        description:
+          - Docker Compose version string. Retained for interface compatibility;
+            the role installs the distro C(docker-compose-plugin) package and does
+            not currently consume this value.
+        type: str
+        required: false
+        default: "v2.23.0"
+      enable_monitoring:
+        description:
+          - Whether to deploy the monitoring container stack. Combined with
+            C(install_docker) (both must be true) to gate the tasks in
+            C(docker_containers.yml).
+        type: bool
+        required: false
+        default: true
+      monitoring_ports:
+        description:
+          - Host ports associated with the monitoring services. Retained for
+            interface/documentation purposes; the rendered compose template routes
+            services via Traefik labels and does not publish these host ports
+            directly.
+        type: dict
+        required: false
+        default:
+          portainer: 9000
+          netdata: 19999
+          uptime_kuma: 3001
+          wireshark_web: 3000
+        options:
+          portainer:
+            description: Host port nominally associated with Portainer.
+            type: int
+            required: false
+            default: 9000
+          netdata:
+            description: Host port nominally associated with Netdata.
+            type: int
+            required: false
+            default: 19999
+          uptime_kuma:
+            description: Host port nominally associated with Uptime Kuma.
+            type: int
+            required: false
+            default: 3001
+          wireshark_web:
+            description: Host port nominally associated with the Wireshark web UI.
+            type: int
+            required: false
+            default: 3000
+      toolkit_scripts_dir:
+        description:
+          - Directory the helper scripts (C(network-scan.sh), C(quick-audit.sh))
+            are deployed to. Also used as the base path for audit results and the
+            logrotate policy, and appended to C(toolkit_user)'s PATH.
+        type: path
+        required: false
+        default: /opt/network-toolkit
+      portainer_hostname:
+        description:
+          - Public hostname Traefik routes to the Portainer web UI in the rendered
+            docker-compose template.
+        type: str
+        required: false
+        default: portainer.example.com
+      netdata_hostname:
+        description:
+          - Public hostname Traefik routes to the Netdata web UI in the rendered
+            docker-compose template.
+        type: str
+        required: false
+        default: netdata.example.com
+      uptime_kuma_hostname:
+        description:
+          - Public hostname Traefik routes to the Uptime Kuma web UI in the
+            rendered docker-compose template.
+        type: str
+        required: false
+        default: uptime.example.com

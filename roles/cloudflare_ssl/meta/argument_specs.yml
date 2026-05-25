@@ -6,24 +6,22 @@ argument_specs:
       - Installs certbot and the certbot-dns-cloudflare plugin (apt on Ubuntu/Debian, dnf on Fedora Server),
         writes the Cloudflare API token to /root/.secrets/cloudflare.ini (mode 0400), then runs
         certbot certonly --dns-cloudflare for inventory_hostname so the host never needs ports 80/443 exposed.
-      - Note that this role's input variables are intentionally not prefixed with the role name; they are
-        consumed verbatim by the tasks and the cloudflare.ini.j2 template, so renaming them would break the role.
     author:
       - Dan Wallace
     options:
-      vault_cloudflare_dns_email:
+      cloudflare_ssl_email:
         description:
           - Email address passed to certbot via --email for the ACME account and expiry notices.
           - Supply from an ansible-vault encrypted file.
         type: str
         required: true
-      vault_cloudflare_dns_api_token:
+      cloudflare_ssl_api_token:
         description:
           - Cloudflare API token scoped to DNS edit for the target zone; written into /root/.secrets/cloudflare.ini.
           - Supply from an ansible-vault encrypted file.
         type: str
         required: true
-      common_debian_packages:
+      cloudflare_ssl_debian_packages:
         description: Packages installed via apt on Ubuntu/Debian to provide certbot and the Cloudflare DNS plugin.
         type: list
         elements: str
@@ -31,7 +29,7 @@ argument_specs:
         default:
           - python3-certbot
           - python3-certbot-dns-cloudflare
-      common_fedora_packages:
+      cloudflare_ssl_fedora_packages:
         description: Packages installed via dnf on Fedora Server to provide certbot and the Cloudflare DNS plugin.
         type: list
         elements: str

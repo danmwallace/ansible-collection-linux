@@ -17,7 +17,7 @@
   ansible.builtin.git:
     repo: https://github.com/drwetter/testssl.sh.git
     dest: /opt/testssl.sh
-    version: HEAD
+    version: v3.2
   become: true
 
 - name: Create testssl symlink

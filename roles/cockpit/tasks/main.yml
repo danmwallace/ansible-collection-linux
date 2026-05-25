@@ -18,7 +18,7 @@
     src: "{{ cockpit_letsencrypt_cert_path }}/fullchain.pem"
     dest: "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt"
     remote_src: true
-    mode: "640"
+    mode: "0600"
   become: true
 
 - name: "(General) Copy SSL private key to Cockpit directory"
@@ -26,7 +26,7 @@
     src: "{{ cockpit_letsencrypt_cert_path }}/privkey.pem"
     dest: "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.key"
     remote_src: true
-    mode: "600"
+    mode: "0600"
   become: true
 
 - name: (Debian) Set proper ownership for SSL files
@@ -41,7 +41,7 @@
   become: true
   when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
 
-- name: "(General) Create renewal hook script"
+- name: "(Fedora) Create renewal hook script"
   ansible.builtin.copy:
     content: |
       #!/bin/bash
@@ -53,7 +53,7 @@
   become: true
   when: ansible_facts.distribution == "Fedora"
 
-- name: "(General) Create renewal hook script"
+- name: "(Debian) Create renewal hook script"
   ansible.builtin.copy:
     content: |
       #!/bin/bash

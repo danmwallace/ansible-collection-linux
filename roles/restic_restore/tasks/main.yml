@@ -5,7 +5,7 @@
 - name: Get SELinux mode
   ansible.builtin.command:
     cmd: getenforce
-  register: selinux_mode
+  register: restic_restore_selinux_mode
   changed_when: false
   failed_when: false
 
@@ -13,7 +13,9 @@
   ansible.builtin.command:
     cmd: setenforce 0
   become: true
-  when: selinux_mode.stdout == "Enforcing"
+  # setenforce changes the running SELinux mode; report it honestly.
+  changed_when: true
+  when: restic_restore_selinux_mode.stdout == "Enforcing"
 
 - name: Ensure parent directory exists
   ansible.builtin.file:
@@ -26,27 +28,35 @@
 
 - name: Restore backup with Restic
   ansible.builtin.shell:
-    cmd: 'restic restore latest --target {{ restore_path }} 2>&1 | grep -v "security.selinux: permission denied" || true'
+    cmd: >-
+      set -o pipefail;
+      restic restore latest --target {{ restore_path }} 2>&1
+      | grep -v "security.selinux: permission denied" || true
+    executable: /bin/bash
   environment:
     RESTIC_REPOSITORY: "{{ restic_repository }}"
     RESTIC_PASSWORD: "{{ restic_password }}"
     B2_ACCOUNT_ID: "{{ b2_account_id }}"
     B2_ACCOUNT_KEY: "{{ b2_account_key }}"
   become: true
-  register: restore_output
+  register: restic_restore_output
+  # A restore always writes the target tree; restic emits a "restoring"/"Summary"
+  # line on success. Report changed only when it actually restored something.
+  changed_when: >-
+    restic_restore_output.stdout is search('restoring|Summary|Restored')
   failed_when: false
 
 - name: Show restore output
   ansible.builtin.debug:
-    var: restore_output.stdout_lines
-  when: restore_output.stdout_lines is defined
+    var: restic_restore_output.stdout_lines
+  when: restic_restore_output.stdout_lines is defined
 
 - name: Check if restore actually failed
   ansible.builtin.fail:
     msg: "Restore failed with errors other than SELinux xattr issues"
   when:
-    - restore_output.rc != 0
-    - "'security.selinux: permission denied' not in restore_output.stderr"
+    - restic_restore_output.rc != 0
+    - "'security.selinux: permission denied' not in restic_restore_output.stderr"
 
 - name: Fix ownership recursively
   ansible.builtin.file:
@@ -58,11 +68,16 @@
 
 - name: Restore SELinux contexts
   ansible.builtin.command:
-    cmd: restorecon -R {{ restore_path }}
+    cmd: restorecon -R -v {{ restore_path }}
   become: true
+  register: restic_restore_restorecon
+  # restorecon -v prints one line per relabeled file; no output means no change.
+  changed_when: restic_restore_restorecon.stdout | length > 0
 
 - name: Re-enable SELinux enforcing
   ansible.builtin.command:
     cmd: setenforce 1
   become: true
-  when: selinux_mode.stdout == "Enforcing"
+  # setenforce changes the running SELinux mode; report it honestly.
+  changed_when: true
+  when: restic_restore_selinux_mode.stdout == "Enforcing"

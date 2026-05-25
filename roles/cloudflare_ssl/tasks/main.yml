@@ -6,7 +6,7 @@
 
 - name: (Ubuntu) Install Certbot and Cloudflare plugin for Cloudflare DNS Challenge
   ansible.builtin.package:
-    name: "{{ common_debian_packages }}"
+    name: "{{ cloudflare_ssl_debian_packages }}"
     state: present
   become: true
   when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
@@ -14,16 +14,16 @@
 ########################################
 # Fedora specific
 
-#- name: "(Fedora - Atomic) Install Certbot and Cloudflare plugin for Cloudflare DNS challenge"
-#  community.general.rpm_ostree_pkg:
-#    name: "{{ common_fedora_packages }}"
-#    state: present
-#  become: true
-#  when: ansible_facts['os_family'] == "RedHat" and ansible_facts['distribution'] == "Fedora" and variant_id.stdout == "iot"
+# - name: "(Fedora - Atomic) Install Certbot and Cloudflare plugin for Cloudflare DNS challenge"
+#   community.general.rpm_ostree_pkg:
+#     name: "{{ cloudflare_ssl_fedora_packages }}"
+#     state: present
+#   become: true
+#   when: ansible_facts['os_family'] == "RedHat" and ansible_facts['distribution'] == "Fedora" and variant_id.stdout == "iot"
 
 - name: (Fedora - Server) Install python3-certbot-dns-cloudflare for Cloudflare DNS challenge
   ansible.builtin.dnf:
-    name: "{{ common_fedora_packages }}"
+    name: "{{ cloudflare_ssl_fedora_packages }}"
     state: present
   become: true
   when: ansible_facts.distribution == "Fedora"
@@ -46,28 +46,32 @@
     mode: "0400"
   become: true
 
-- name: (Fedora) Generate SSL certificate for "{{ inventory_hostname  }}" using Cloudflare DNS Challenge
+- name: (Fedora) Generate SSL certificate via Cloudflare DNS Challenge for {{ inventory_hostname }}
   ansible.builtin.shell: |
     certbot-3 certonly \
       --dns-cloudflare \
       --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
       --dns-cloudflare-propagation-seconds 60 \
       --agree-tos \
-      --email {{ vault_cloudflare_dns_email }} \
+      --email {{ cloudflare_ssl_email }} \
       --non-interactive \
       --domains {{ inventory_hostname }}
+  args:
+    creates: "/etc/letsencrypt/live/{{ inventory_hostname }}/cert.pem"
   become: true
   when: ansible_facts.distribution == "Fedora"
 
-- name: (Debian) Generate SSL certificate for "{{ inventory_hostname  }}" using Cloudflare DNS Challenge
+- name: (Debian) Generate SSL certificate via Cloudflare DNS Challenge for {{ inventory_hostname }}
   ansible.builtin.shell: |
     certbot certonly \
       --dns-cloudflare \
       --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
       --dns-cloudflare-propagation-seconds 60 \
       --agree-tos \
-      --email {{ vault_cloudflare_dns_email }} \
+      --email {{ cloudflare_ssl_email }} \
       --non-interactive \
       --domains {{ inventory_hostname }}
+  args:
+    creates: "/etc/letsencrypt/live/{{ inventory_hostname }}/cert.pem"
   become: true
   when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"

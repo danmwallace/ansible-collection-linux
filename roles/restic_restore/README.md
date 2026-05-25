@@ -84,12 +84,20 @@ vault_b2_account_key: "your-b2-account-key"
 
 ## Notes
 
-- **Not idempotent.** The restore is an `ansible.builtin.shell` with
-  `failed_when: false` and the SELinux toggles / `restorecon` are
-  `ansible.builtin.command` tasks without `changed_when` — every run reports
-  changes and re-runs the restore. This is a restore tool, so re-running
-  overwrites the target with the latest snapshot; treat each run as destructive
-  to `restore_path`.
+- **Inherently non-idempotent.** This is a restore tool: every run re-runs
+  `restic restore latest` and overwrites the target with the latest snapshot, so
+  treat each run as destructive to `restore_path`. The tasks now report `changed`
+  *honestly* rather than always:
+  - `getenforce` is read-only → `changed_when: false`.
+  - The `setenforce` permissive/enforcing toggles → `changed_when: true` (they
+    do mutate the running SELinux mode).
+  - The restore `shell` reports `changed` only when restic actually restored
+    data (its output matches `restoring`/`Summary`/`Restored`).
+  - `restorecon -R -v` reports `changed` only when it relabeled at least one file
+    (non-empty output).
+  Because the restore always writes the tree, expect it to report `changed` on
+  every run against a populated repository — that reflects reality, not a lint
+  workaround.
 - Only the `latest` snapshot is restored; there is no variable to select a
   specific snapshot ID or to include/exclude paths.
 - The SELinux permissive window is host-wide for the duration of the restore.

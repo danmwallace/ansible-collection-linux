@@ -30,5 +30,7 @@
     path: "/home/{{ toolkit_user }}/.bashrc"
     line: "export PATH=$PATH:{{ toolkit_scripts_dir }}"
     owner: "{{ toolkit_user }}"
+    group: "{{ toolkit_user }}"
+    mode: "0644"
     create: true
   become: true

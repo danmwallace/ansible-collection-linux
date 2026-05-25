@@ -13,10 +13,18 @@
   become: true
   when: install_docker
 
+- name: Set Docker repo architecture
+  ansible.builtin.set_fact:
+    _docker_repo_arch: >-
+      {{ ansible_facts['architecture'] | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}
+  when: install_docker
+
 - name: Add Docker repository
   ansible.builtin.apt_repository:
-    repo: "deb [arch={{ ansible_facts['architecture'] | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}] https://download.docker.com/linux/{{ _docker_repo_distro
-      }} {{ ansible_facts['distribution_release'] }} stable"
+    repo: >-
+      deb [arch={{ _docker_repo_arch }}]
+      https://download.docker.com/linux/{{ _docker_repo_distro }}
+      {{ ansible_facts['distribution_release'] }} stable
     state: present
   become: true
   when: install_docker

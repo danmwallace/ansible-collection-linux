@@ -22,17 +22,15 @@ not currently wired up.
 
 ## Role Variables
 
-Validated by `meta/argument_specs.yml`. Note these variables are **not** prefixed
-with the role name (`cloudflare_ssl_*`), which deviates from the workspace
-convention — they are consumed verbatim by the tasks and the `cloudflare.ini.j2`
-template, so renaming requires editing the role.
+Validated by `meta/argument_specs.yml`. All variables are prefixed with the role
+name (`cloudflare_ssl_*`) per the workspace convention.
 
 | Variable | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `vault_cloudflare_dns_api_token` | str | yes | _(empty)_ | Cloudflare API token with DNS edit scope; written into `cloudflare.ini`. **Supply from vault.** |
-| `vault_cloudflare_dns_email` | str | yes | _(empty)_ | Email passed to `certbot --email` for the ACME account / expiry notices. **Supply from vault.** |
-| `common_debian_packages` | list | no | `[python3-certbot, python3-certbot-dns-cloudflare]` | Apt packages installed on Ubuntu/Debian. |
-| `common_fedora_packages` | list | no | `[python3-certbot, python3-certbot-dns-cloudflare]` | Dnf packages installed on Fedora. |
+| `cloudflare_ssl_api_token` | str | yes | _(none)_ | Cloudflare API token with DNS edit scope; written into `cloudflare.ini`. **Supply from vault.** |
+| `cloudflare_ssl_email` | str | yes | _(none)_ | Email passed to `certbot --email` for the ACME account / expiry notices. **Supply from vault.** |
+| `cloudflare_ssl_debian_packages` | list | no | `[python3-certbot, python3-certbot-dns-cloudflare]` | Apt packages installed on Ubuntu/Debian. |
+| `cloudflare_ssl_fedora_packages` | list | no | `[python3-certbot, python3-certbot-dns-cloudflare]` | Dnf packages installed on Fedora. |
 
 The certificate is always requested for `inventory_hostname`; there is no
 variable to override the domain or request a wildcard.
@@ -49,16 +47,17 @@ None declared in `meta/main.yml`.
   roles:
     - role: danmwallace.linux.cloudflare_ssl
       vars:
-        vault_cloudflare_dns_email: "{{ vault_cloudflare_dns_email }}"
-        vault_cloudflare_dns_api_token: "{{ vault_cloudflare_dns_api_token }}"
+        cloudflare_ssl_email: "{{ vault_cloudflare_ssl_email }}"
+        cloudflare_ssl_api_token: "{{ vault_cloudflare_ssl_api_token }}"
 ```
 
-Keep the real values in an encrypted vault file:
+Keep the real values in an encrypted vault file and map them to the role's
+input variables (as shown above):
 
 ```yaml
 # group_vars/web/vault.yml (ansible-vault encrypted)
-vault_cloudflare_dns_email: "sysadmin@example.com"
-vault_cloudflare_dns_api_token: "your-cloudflare-dns-edit-token"
+vault_cloudflare_ssl_email: "sysadmin@example.com"
+vault_cloudflare_ssl_api_token: "your-cloudflare-dns-edit-token"
 ```
 
 ## What the Role Does
@@ -74,10 +73,10 @@ vault_cloudflare_dns_api_token: "your-cloudflare-dns-edit-token"
 
 ## Notes
 
-- **Not idempotent on the issuance step.** The certbot tasks use
-  `ansible.builtin.shell` with no `changed_when`/`creates`, so they report
-  `changed` and re-invoke certbot on every run. certbot itself is a no-op when
-  the cert is still valid, but the task will not pass a clean second-run check.
+- **Idempotent issuance.** The certbot tasks use `ansible.builtin.shell` with
+  `creates: /etc/letsencrypt/live/<inventory_hostname>/cert.pem`, so once the
+  certificate exists the task is skipped and a second run reports `ok`. To force
+  re-issuance, remove that path on the target first.
 - Renewal is left to certbot's own systemd timer; this role does not install a
   separate renewal unit. The companion `danmwallace.linux.cockpit` role installs
   a post-renewal hook for Cockpit.

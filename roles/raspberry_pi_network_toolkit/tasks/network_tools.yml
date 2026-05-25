@@ -31,7 +31,7 @@
     state: present
   become: true
 
-- name: Install wireless tools
+- name: Install wireless tools (best-effort; not all are in every repo)
   ansible.builtin.apt:
     pkg: "{{ item }}"
     state: present
@@ -42,4 +42,8 @@
     - wavemon
     - wireless-tools
   when: ansible_facts['os_family'] == "Debian"
-  ignore_errors: true
+  register: _wireless_pkg_install
+  failed_when:
+    - _wireless_pkg_install is failed
+    - '"Unable to locate package" not in (_wireless_pkg_install.msg | default(""))'
+    - '"No package matching" not in (_wireless_pkg_install.msg | default(""))'

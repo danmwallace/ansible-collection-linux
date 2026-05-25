@@ -2,6 +2,6 @@
 # handlers file for cockpit
 
 - name: Restart cockpit
-  service:
+  ansible.builtin.service:
     name: cockpit
     state: restarted
