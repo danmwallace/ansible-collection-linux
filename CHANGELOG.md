@@ -7,6 +7,21 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-28
+
+### Changed
+
+- Relicensed from GPL-2.0-or-later to MIT.
+- Added `meta/argument_specs.yml` and regenerated role + collection READMEs to the
+  standardized house style.
+- Idempotency hardening across the roles.
+
+### Known issues
+
+- The collection lints under the `basic` profile. `raspberry_pi_network_toolkit`
+  still carries `var-naming[no-role-prefix]` warnings; its production-profile
+  cleanup is deferred (see `.ansible-lint`).
+
 ## [1.0.0] - TBD
 
 ### Added
