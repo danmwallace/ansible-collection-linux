@@ -22,7 +22,7 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
   still carries `var-naming[no-role-prefix]` warnings; its production-profile
   cleanup is deferred (see `.ansible-lint`).
 
-## [1.0.0] - TBD
+## [1.0.0] - 2026-05-01
 
 ### Added
 
