@@ -30,3 +30,8 @@ toolkit_scripts_dir: /opt/network-toolkit
 portainer_hostname: "portainer.example.com"
 netdata_hostname: "netdata.example.com"
 uptime_kuma_hostname: "uptime.example.com"
+
+# Container image versions
+portainer_version: '2.21.4'
+netdata_version: 'stable'
+uptime_kuma_version: '1.23.16'
