@@ -1,6 +1,6 @@
 services:
   portainer:
-    image: portainer/portainer-ce:latest
+    image: portainer/portainer-ce:{{ portainer_version | default('2.21.4') }}
     container_name: portainer
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   netdata:
-    image: netdata/netdata:latest
+    image: netdata/netdata:{{ netdata_version | default('stable') }}
     container_name: netdata
     cap_add:
       - SYS_PTRACE
@@ -43,7 +43,7 @@ services:
     restart: unless-stopped
 
   uptime-kuma:
-    image: louislam/uptime-kuma:latest
+    image: louislam/uptime-kuma:{{ uptime_kuma_version | default('1.23.16') }}
     container_name: uptime-kuma
     volumes:
       - uptime-kuma:/app/data
