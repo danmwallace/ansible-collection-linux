@@ -35,3 +35,6 @@ uptime_kuma_hostname: "uptime.example.com"
 portainer_version: '2.21.4'
 netdata_version: 'stable'
 uptime_kuma_version: '1.23.16'
+# NOTE: ghcr.io/tecnativa/docker-socket-proxy:0.3.0 supports arm64 and arm/v7.
+# Verify the image manifest for your specific Raspberry Pi model before deploying.
+portainer_socket_proxy_version: "0.3.0"
