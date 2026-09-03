@@ -11,7 +11,7 @@ install_docker: true
 install_gui_tools: false
 
 # Docker Compose version to install
-docker_compose_version: "v2.23.0"
+docker_compose_version: "v5.5.0"
 
 # Whether to deploy monitoring containers
 enable_monitoring: true
@@ -32,9 +32,11 @@ netdata_hostname: "netdata.example.com"
 uptime_kuma_hostname: "uptime.example.com"
 
 # Container image versions
-portainer_version: '2.21.4'
-netdata_version: 'stable'
-uptime_kuma_version: '1.23.16'
-# NOTE: ghcr.io/tecnativa/docker-socket-proxy:0.3.0 supports arm64 and arm/v7.
+portainer_version: '2.39.4'
+# NOTE: uptime-kuma 2.x is a major version bump from 1.x and requires a data migration.
+# Review https://github.com/louislam/uptime-kuma/wiki before upgrading existing installs.
+uptime_kuma_version: '2.4.0'
+netdata_version: 'v2.5.3'
+# NOTE: ghcr.io/tecnativa/docker-socket-proxy:0.4.2 supports arm64 and arm/v7.
 # Verify the image manifest for your specific Raspberry Pi model before deploying.
-portainer_socket_proxy_version: "0.3.0"
+portainer_socket_proxy_version: "0.4.2"

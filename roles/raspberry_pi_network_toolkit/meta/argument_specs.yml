@@ -48,7 +48,7 @@ argument_specs:
             not currently consume this value.
         type: str
         required: false
-        default: "v2.23.0"
+        default: "v5.5.0"
       enable_monitoring:
         description:
           - Whether to deploy the monitoring container stack. Combined with

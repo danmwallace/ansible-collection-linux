@@ -1,6 +1,6 @@
 services:
   socket-proxy:
-    image: ghcr.io/tecnativa/docker-socket-proxy:{{ portainer_socket_proxy_version | default('0.3.0') }}
+    image: ghcr.io/tecnativa/docker-socket-proxy:{{ portainer_socket_proxy_version | default('0.4.2') }}
     container_name: toolkit-socket-proxy
     restart: unless-stopped
     volumes:
@@ -14,7 +14,7 @@ services:
       - TASKS=1
       - VOLUMES=1
       - VERSION=1
-      - POST=1
+      - POST=0
       - BUILD=0
       - AUTH=0
       - SECRETS=0
@@ -23,7 +23,7 @@ services:
       - socket_proxy_net
 
   portainer:
-    image: portainer/portainer-ce:{{ portainer_version | default('2.21.4') }}
+    image: portainer/portainer-ce:{{ portainer_version | default('2.39.4') }}
     container_name: portainer
     depends_on:
       - socket-proxy
@@ -45,16 +45,20 @@ services:
     restart: unless-stopped
 
   netdata:
-    image: netdata/netdata:{{ netdata_version | default('stable') }}
+    image: netdata/netdata:{{ netdata_version | default('v2.5.3') }}
     container_name: netdata
+    depends_on:
+      - socket-proxy
     cap_add:
       - SYS_PTRACE
     security_opt:
       - apparmor:unconfined
+    environment:
+      # Route Docker API access through the socket proxy instead of a direct socket mount.
+      DOCKER_HOST: tcp://socket-proxy:2375
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - netdata_cache:/var/cache/netdata
       - netdata_lib:/var/lib/netdata
     labels:
@@ -67,10 +71,11 @@ services:
     networks:
       - default
       - proxy_network
+      - socket_proxy_net
     restart: unless-stopped
 
   uptime-kuma:
-    image: louislam/uptime-kuma:{{ uptime_kuma_version | default('1.23.16') }}
+    image: louislam/uptime-kuma:{{ uptime_kuma_version | default('2.4.0') }}
     container_name: uptime-kuma
     volumes:
       - uptime-kuma:/app/data

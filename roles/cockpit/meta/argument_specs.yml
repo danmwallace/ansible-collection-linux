@@ -28,3 +28,10 @@ argument_specs:
         type: path
         required: false
         default: "/etc/cockpit/ws-certs.d"
+      cockpit_allowed_cidr:
+        description:
+          - Source CIDR allowed to reach Cockpit on port 9090 via UFW (Ubuntu only).
+            Restrict to your homelab or VPN CIDR for tighter scoping.
+        type: str
+        required: false
+        default: "10.0.0.0/8"

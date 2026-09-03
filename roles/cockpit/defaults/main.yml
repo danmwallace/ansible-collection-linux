@@ -4,3 +4,6 @@
 cockpit_hostname: "{{ inventory_hostname }}" # Default to inventory_hostname if none provided in playbook
 cockpit_letsencrypt_cert_path: "/etc/letsencrypt/live/{{ cockpit_hostname }}"
 cockpit_cert_path: "/etc/cockpit/ws-certs.d"
+# Source CIDR allowed to reach Cockpit (port 9090). Defaults to RFC-1918 private
+# ranges; set to your homelab CIDR (e.g. 192.168.1.0/24) for tighter scoping.
+cockpit_allowed_cidr: "10.0.0.0/8"
