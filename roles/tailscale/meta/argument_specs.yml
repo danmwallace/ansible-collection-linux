@@ -1,0 +1,54 @@
+---
+argument_specs:
+  main:
+    short_description: Install and configure Tailscale as a subnet router.
+    description:
+      - Installs Tailscale from the official apt repository, enables IP forwarding,
+        and configures the node as a subnet router advertising one or more CIDRs.
+      - On the first run, authenticates using a pre-auth key. On subsequent runs,
+        uses C(tailscale set) to update routes without re-authenticating.
+      - Subnet routes must still be approved in the Tailscale admin console after
+        the first deployment.
+    author:
+      - Dan Wallace [danmwallace]
+    options:
+      tailscale_auth_key:
+        description:
+          - Tailscale pre-authentication key used for the initial login.
+          - Generate a reusable auth key in the Tailscale admin console under
+            Settings → Keys. Use an ephemeral key if the node should be removed
+            from the tailnet when offline.
+          - Not used after the node is already authenticated. Supply from vault.
+        type: str
+        required: false
+        default: ""
+        no_log: true
+      tailscale_advertise_routes:
+        description:
+          - Comma-separated list of CIDRs to advertise as subnet routes.
+          - Example C(10.10.99.0/24,192.168.70.0/24). These routes must be
+            approved in the Tailscale admin console before clients can use them.
+        type: str
+        required: false
+        default: ""
+      tailscale_hostname:
+        description:
+          - Device name shown in the Tailscale admin console. Defaults to the
+            system hostname when left empty.
+        type: str
+        required: false
+        default: ""
+      tailscale_accept_routes:
+        description:
+          - Whether this node should accept routes advertised by other subnet
+            routers on the tailnet.
+        type: bool
+        required: false
+        default: false
+      tailscale_exit_node:
+        description:
+          - Whether to advertise this node as a Tailscale exit node. Requires
+            approval in the admin console. Not commonly needed for a subnet router.
+        type: bool
+        required: false
+        default: false

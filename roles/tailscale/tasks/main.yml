@@ -1,0 +1,73 @@
+---
+- name: Enable IP forwarding for Tailscale subnet routing
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    sysctl_set: true
+    sysctl_file: /etc/sysctl.d/99-tailscale.conf
+    reload: true
+  loop:
+    - net.ipv4.ip_forward
+    - net.ipv6.conf.all.forwarding
+
+- name: Download Tailscale GPG signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/{{ _tailscale_repo_os }}/{{ ansible_distribution_release }}.gpg"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+  vars:
+    _tailscale_repo_os: "{{ 'ubuntu' if ansible_distribution == 'Ubuntu' else 'debian' }}"
+
+- name: Add Tailscale apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+      https://pkgs.tailscale.com/stable/{{ _tailscale_repo_os }}
+      {{ ansible_distribution_release }} main
+    filename: tailscale
+    state: present
+  vars:
+    _tailscale_repo_os: "{{ 'ubuntu' if ansible_distribution == 'Ubuntu' else 'debian' }}"
+
+- name: Install tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: true
+
+- name: Ensure tailscaled is enabled and started
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Check Tailscale connection status
+  ansible.builtin.command: tailscale status
+  register: _tailscale_status
+  failed_when: false
+  changed_when: false
+
+- name: Authenticate Tailscale (initial login)
+  ansible.builtin.command: >-
+    tailscale up
+    --authkey={{ tailscale_auth_key }}
+    {{ ('--advertise-routes=' + tailscale_advertise_routes) if tailscale_advertise_routes else '' }}
+    {{ ('--hostname=' + tailscale_hostname) if tailscale_hostname else '' }}
+    {{ '--accept-routes' if tailscale_accept_routes else '' }}
+    {{ '--advertise-exit-node' if tailscale_exit_node else '' }}
+  no_log: true
+  when:
+    - tailscale_auth_key | length > 0
+    - _tailscale_status.rc != 0
+  changed_when: true
+
+- name: Update Tailscale advertised routes (already authenticated)
+  ansible.builtin.command: >-
+    tailscale set
+    {{ ('--advertise-routes=' + tailscale_advertise_routes) if tailscale_advertise_routes else '' }}
+    {{ ('--hostname=' + tailscale_hostname) if tailscale_hostname else '' }}
+    {{ '--accept-routes' if tailscale_accept_routes else '' }}
+    {{ '--advertise-exit-node' if tailscale_exit_node else '' }}
+  when:
+    - _tailscale_status.rc == 0
+  changed_when: false
