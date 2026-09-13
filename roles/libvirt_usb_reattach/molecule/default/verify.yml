@@ -1,0 +1,136 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Scenario - domain not running does nothing
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb
+        FAKE_DOMSTATE: shut off
+      register: _not_running
+      changed_when: false
+
+    - name: Assert not-running output
+      ansible.builtin.assert:
+        that: "'testvm not running' in _not_running.stdout"
+
+    - name: Scenario - device absent does nothing
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb-empty
+      register: _absent
+      changed_when: false
+
+    - name: Assert device-absent output
+      ansible.builtin.assert:
+        that: "'not present on host' in _absent.stdout"
+
+    - name: Reset the virsh call log
+      ansible.builtin.file:
+        path: /tmp/virsh.log
+        state: absent
+
+    - name: Scenario - binding already current does not re-attach
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb
+        FAKE_BUS: "1"
+        FAKE_DEV: "10"
+      register: _bound
+      changed_when: false
+
+    - name: Read virsh calls for the already-bound scenario
+      ansible.builtin.slurp:
+        src: /tmp/virsh.log
+      register: _bound_log
+
+    - name: Assert already-bound output and no attach calls
+      ansible.builtin.assert:
+        that:
+          - "'already bound to molecule-dongle at 1/10' in _bound.stdout"
+          - "'attach-device' not in (_bound_log.content | b64decode)"
+
+    - name: Reset the virsh call log
+      ansible.builtin.file:
+        path: /tmp/virsh.log
+        state: absent
+
+    - name: Scenario - stale binding is detached and re-attached live
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb
+        FAKE_BUS: "1"
+        FAKE_DEV: "6"
+      register: _stale
+      changed_when: false
+
+    - name: Read virsh calls for the stale scenario
+      ansible.builtin.slurp:
+        src: /tmp/virsh.log
+      register: _stale_log
+
+    - name: Assert stale binding triggered detach then attach with the device XML
+      ansible.builtin.assert:
+        that:
+          - "'re-attaching molecule-dongle at 1/10 to testvm' in _stale.stdout"
+          - "'-c qemu:///system detach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"
+          - "'-c qemu:///system attach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"
+          - "(_stale_log.content | b64decode).find('detach-device') < (_stale_log.content | b64decode).find('attach-device')"
+
+    - name: Stat installed files
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      loop:
+        - { path: /usr/local/sbin/libvirt-usb-reattach, mode: "0755" }
+        - { path: /etc/systemd/system/libvirt-usb-reattach@.service, mode: "0644" }
+        - { path: /etc/libvirt-usb-reattach/molecule-dongle.conf, mode: "0644" }
+        - { path: /etc/libvirt/hostdev/molecule-dongle.xml, mode: "0644" }
+        - { path: /etc/udev/rules.d/99-libvirt-usb-reattach-molecule-dongle.rules, mode: "0644" }
+      register: _files
+
+    - name: Assert files exist, are root-owned, and have the expected mode
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.pw_name == 'root'
+          - item.stat.mode == item.item.mode
+        fail_msg: "{{ item.item.path }} missing or wrong owner/mode"
+      loop: "{{ _files.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+
+    - name: Validate the udev rule syntax
+      ansible.builtin.command: udevadm verify /etc/udev/rules.d/99-libvirt-usb-reattach-molecule-dongle.rules
+      changed_when: false
+
+    - name: Read the udev rule
+      ansible.builtin.slurp:
+        src: /etc/udev/rules.d/99-libvirt-usb-reattach-molecule-dongle.rules
+      register: _rule
+
+    - name: Assert the rule matches by serial and starts the device's unit instance
+      ansible.builtin.assert:
+        that:
+          - "'ATTR{idVendor}==\"10c4\"' in (_rule.content | b64decode)"
+          - "'ATTR{idProduct}==\"ea60\"' in (_rule.content | b64decode)"
+          - "'ATTR{serial}==\"abc123\"' in (_rule.content | b64decode)"
+          - "'ENV{SYSTEMD_WANTS}+=\"libvirt-usb-reattach@molecule-dongle.service\"' in (_rule.content | b64decode)"
+
+    - name: Validate the unit instance
+      ansible.builtin.command: systemd-analyze verify libvirt-usb-reattach@molecule-dongle.service
+      changed_when: false
+
+    - name: Start the unit instance (real sysfs has no such device, so it exits cleanly)
+      ansible.builtin.systemd:
+        name: libvirt-usb-reattach@molecule-dongle.service
+        state: started
+
+    - name: Read the unit result
+      ansible.builtin.command: systemctl show -p Result --value libvirt-usb-reattach@molecule-dongle.service  # noqa command-instead-of-module
+      register: _unit_result
+      changed_when: false
+
+    - name: Assert the unit ran successfully
+      ansible.builtin.assert:
+        that: _unit_result.stdout == 'success'

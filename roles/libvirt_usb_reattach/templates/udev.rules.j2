@@ -1,0 +1,3 @@
+# {{ ansible_managed }}
+# {{ item.name }}: USB {{ item.vendor_id }}:{{ item.product_id }}
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="{{ item.vendor_id }}", ATTR{idProduct}=="{{ item.product_id }}", ATTR{serial}=="{{ item.serial }}", TAG+="systemd", ENV{SYSTEMD_WANTS}+="libvirt-usb-reattach@{{ item.name }}.service"

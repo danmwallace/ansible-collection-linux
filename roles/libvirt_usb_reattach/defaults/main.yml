@@ -1,0 +1,7 @@
+---
+# SPDX-License-Identifier: MIT
+libvirt_usb_reattach_devices: []
+libvirt_usb_reattach_libvirt_uri: qemu:///system
+libvirt_usb_reattach_service_after:
+  - virtqemud.service
+  - libvirtd.service

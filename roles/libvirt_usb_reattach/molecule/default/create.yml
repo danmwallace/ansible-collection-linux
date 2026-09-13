@@ -1,0 +1,20 @@
+---
+- name: Create
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure the molecule test image is built
+      containers.podman.podman_image:
+        name: localhost/libvirt-usb-reattach-molecule
+        path: "{{ playbook_dir }}"
+        build:
+          file: "{{ playbook_dir }}/Containerfile"
+        state: build
+
+    - name: Ensure the systemd test container is running
+      containers.podman.podman_container:
+        name: libvirt-usb-reattach-instance
+        image: localhost/libvirt-usb-reattach-molecule
+        systemd: always
+        state: started
+        command: /sbin/init

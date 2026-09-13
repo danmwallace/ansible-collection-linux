@@ -1,0 +1,60 @@
+---
+# SPDX-License-Identifier: MIT
+argument_specs:
+  main:
+    short_description: Re-attach USB passthrough devices to running libvirt domains after they re-enumerate.
+    description:
+      - libvirt binds a running domain's USB hostdev to the bus/device numbers resolved at domain start.
+        When the device is replugged or reset it gets new numbers and the guest silently loses it.
+      - Installs a udev rule per device (matched by USB serial) that starts a oneshot systemd unit,
+        which live detach/attaches the device only when the domain's binding is stale.
+      - The domain's persistent XML must already contain a vendor/product hostdev for the device;
+        this role does not change domain definitions.
+    author:
+      - Dan Wallace [danmwallace]
+    options:
+      libvirt_usb_reattach_devices:
+        description: >-
+          USB devices to keep attached to their libvirt domains. An empty list
+          installs the re-attach script and unit template but defines no
+          per-device udev rules, config, or hostdev XML (no-op).
+        type: list
+        elements: dict
+        required: false
+        default: []
+        options:
+          name:
+            description: Short identifier used in file and unit names. Lowercase letters, digits, "_" and "-".
+            type: str
+            required: true
+          domain:
+            description: >-
+              libvirt domain the device is passed through to. Letters, digits,
+              "_", ".", "+", ":" and "-" only.
+            type: str
+            required: true
+          vendor_id:
+            description: USB vendor ID as 4 lowercase hex digits, without 0x (e.g. "10c4").
+            type: str
+            required: true
+          product_id:
+            description: USB product ID as 4 lowercase hex digits, without 0x (e.g. "ea60").
+            type: str
+            required: true
+          serial:
+            description: >-
+              USB serial number (sysfs "serial" attribute); distinguishes identical
+              adapters. Letters, digits, ".", "_", ":" and "-" only.
+            type: str
+            required: true
+      libvirt_usb_reattach_libvirt_uri:
+        description: libvirt connection URI used by virsh.
+        type: str
+        default: qemu:///system
+      libvirt_usb_reattach_service_after:
+        description: Units the re-attach service orders itself after (libvirt daemon units).
+        type: list
+        elements: str
+        default:
+          - virtqemud.service
+          - libvirtd.service

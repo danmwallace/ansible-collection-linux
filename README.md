@@ -36,6 +36,7 @@ collections:
 | --- | --- |
 | [`danmwallace.linux.cloudflare_ssl`](roles/cloudflare_ssl/README.md) | Obtain Let's Encrypt certificates via the Cloudflare DNS-01 challenge with certbot. |
 | [`danmwallace.linux.cockpit`](roles/cockpit/README.md) | Configure TLS for an already-installed Cockpit using Let's Encrypt certificates. |
+| [`danmwallace.linux.libvirt_usb_reattach`](roles/libvirt_usb_reattach/README.md) | Re-attach USB passthrough devices to running libvirt domains after they re-enumerate. |
 | [`danmwallace.linux.mikrotik_backup`](roles/mikrotik_backup/README.md) | Nightly SFTP pull of on-device MikroTik RouterOS backup and export files, with Uptime Kuma monitoring. |
 | [`danmwallace.linux.raspberry_pi_network_toolkit`](roles/raspberry_pi_network_toolkit/README.md) | Configure a Raspberry Pi (or Debian/Ubuntu host) as a portable network diagnostics and reconnaissance toolkit. |
 | [`danmwallace.linux.restic_backup`](roles/restic_backup/README.md) | Nightly Restic backups of application data to an SFTP repository, with database dumps and Uptime Kuma monitoring. |
