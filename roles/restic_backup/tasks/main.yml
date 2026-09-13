@@ -84,6 +84,44 @@
     group: root
     mode: "0700"
 
+- name: Check whether the restic repository is reachable
+  ansible.builtin.command:
+    cmd: restic cat config
+  environment: "{{ _restic_backup_env }}"
+  register: _restic_backup_repo
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only; needed so check-mode previews have a result
+  no_log: true
+
+- name: Read the SSH public key for error reporting
+  ansible.builtin.slurp:
+    src: "{{ restic_backup_ssh_key_path }}.pub"
+  register: _restic_backup_pubkey
+  when:
+    - _restic_backup_repo.rc not in [0, 10]
+    - not ansible_check_mode
+
+- name: Fail with the key to authorise when the repository cannot be opened
+  ansible.builtin.fail:
+    msg: >-
+      restic cannot open {{ restic_backup_repository }} (exit code {{ _restic_backup_repo.rc }}):
+      {{ _restic_backup_repo.stderr | default('') | trim }}
+      If the NAS has not authorised this host yet, add this public key to user
+      {{ restic_backup_nas_user }}: {{ _restic_backup_pubkey.content | b64decode | trim }}
+  # In check mode restic may not be installed and the SSH alias not written yet.
+  when:
+    - _restic_backup_repo.rc not in [0, 10]
+    - not ansible_check_mode
+
+- name: Initialise the restic repository when it does not exist yet
+  ansible.builtin.command:
+    cmd: restic init
+  environment: "{{ _restic_backup_env }}"
+  when: _restic_backup_repo.rc == 10
+  changed_when: true
+  no_log: true
+
 - name: Ensure the restic backup systemd units are present
   ansible.builtin.template:
     src: "{{ item }}.j2"
