@@ -32,6 +32,11 @@ jobs:
           if [ -f requirements.yml ]; then
             ansible-galaxy collection install -r requirements.yml
           fi
+          # restic_backup's molecule scenario drives its podman test container
+          # via containers.podman.podman; ansible-lint's syntax-check needs it
+          # installed to resolve that connection plugin and the podman_image /
+          # podman_container modules used in create.yml / destroy.yml.
+          ansible-galaxy collection install containers.podman
       - name: Run ansible-lint
         working-directory: ansible_collections/danmwallace/linux
         run: ansible-lint
