@@ -22,12 +22,12 @@
         state: directory
         mode: "0755"
 
-    - name: Ensure a fake sysfs USB device exists (serial abc123 at bus 001 device 007)
+    - name: Ensure a fake sysfs USB device exists (serial abc123 at bus 001 device 010)
       ansible.builtin.copy:
         dest: "/tmp/fake-usb/1-1/{{ item.key }}"
         content: "{{ item.value }}\n"
         mode: "0644"
-      loop: "{{ {'serial': 'abc123', 'busnum': '001', 'devnum': '007'} | dict2items }}"
+      loop: "{{ {'serial': 'abc123', 'busnum': '001', 'devnum': '010'} | dict2items }}"
 
     - name: Ensure an empty fake sysfs exists for the device-absent case
       ansible.builtin.file:

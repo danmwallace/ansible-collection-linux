@@ -36,7 +36,7 @@
       environment:
         LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb
         FAKE_BUS: "1"
-        FAKE_DEV: "7"
+        FAKE_DEV: "10"
       register: _bound
       changed_when: false
 
@@ -48,7 +48,7 @@
     - name: Assert already-bound output and no attach calls
       ansible.builtin.assert:
         that:
-          - "'already bound to molecule-dongle at 1/7' in _bound.stdout"
+          - "'already bound to molecule-dongle at 1/10' in _bound.stdout"
           - "'attach-device' not in (_bound_log.content | b64decode)"
 
     - name: Reset the virsh call log
@@ -73,9 +73,10 @@
     - name: Assert stale binding triggered detach then attach with the device XML
       ansible.builtin.assert:
         that:
-          - "'re-attaching molecule-dongle at 1/7 to testvm' in _stale.stdout"
+          - "'re-attaching molecule-dongle at 1/10 to testvm' in _stale.stdout"
           - "'-c qemu:///system detach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"
           - "'-c qemu:///system attach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"
+          - "(_stale_log.content | b64decode).find('detach-device') < (_stale_log.content | b64decode).find('attach-device')"
 
     - name: Stat installed files
       ansible.builtin.stat:
