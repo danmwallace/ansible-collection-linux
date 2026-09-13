@@ -1,0 +1,116 @@
+---
+argument_specs:
+  main:
+    short_description: Nightly restic backups of application data to an SFTP repository.
+    description:
+      - Installs restic, a dedicated SSH identity, a backup script and a systemd timer.
+      - Dumps Postgres, MariaDB and SQLite databases before each backup so live data
+        directories never need to be copied.
+      - Initialises the repository on first run. The backup service itself never
+        initialises a repository, so a deleted repository makes the next run fail loudly.
+    author:
+      - Dan Wallace [danmwallace]
+    options:
+      restic_backup_password:
+        description: Repository encryption password. Letters and digits only. Supply from vault.
+        type: str
+        required: true
+        no_log: true
+      restic_backup_nas_host:
+        description: Hostname or IP of the SFTP server.
+        type: str
+        required: true
+      restic_backup_nas_host_key:
+        description: Pinned SSH host key of the SFTP server, as "<type> <base64>" without a hostname.
+        type: str
+        required: true
+      restic_backup_nas_user:
+        description: Remote user this host authenticates as.
+        type: str
+        default: "restic-{{ inventory_hostname }}"
+      restic_backup_nas_base_path:
+        description: Remote directory containing one repository directory per host.
+        type: str
+        default: /mnt/ssd-mirror/backups/restic
+      restic_backup_repository:
+        description: restic repository URL. The host alias restic-backup-nas is defined by the role.
+        type: str
+        default: "sftp:restic-backup-nas:{{ restic_backup_nas_base_path }}/{{ inventory_hostname }}"
+      restic_backup_ssh_key_path:
+        description: Private key path for the dedicated SSH identity. The public key is written next to it with a .pub suffix.
+        type: str
+        default: /etc/restic-backup/id_ed25519
+      restic_backup_paths:
+        description: Directories to back up. The dump directory /var/lib/restic-backup/dumps is always added.
+        type: list
+        elements: str
+        default: []
+      restic_backup_excludes:
+        description: restic exclude patterns, one per entry.
+        type: list
+        elements: str
+        default: []
+      restic_backup_postgres_dumps:
+        description: Postgres containers to dump with pg_dumpall before each backup.
+        type: list
+        elements: dict
+        default: []
+        options:
+          container:
+            description: Podman container name.
+            type: str
+            required: true
+          user:
+            description: Postgres superuser inside the container.
+            type: str
+            required: true
+      restic_backup_mariadb_dumps:
+        description: MariaDB containers to dump with mariadb-dump. The root password is read from MARIADB_ROOT_PASSWORD inside the container.
+        type: list
+        elements: dict
+        default: []
+        options:
+          container:
+            description: Podman container name.
+            type: str
+            required: true
+      restic_backup_sqlite_dbs:
+        description:
+          - SQLite databases captured with the online .backup command.
+          - Plain paths must exist; shell globs are expanded at run time and may match nothing.
+        type: list
+        elements: str
+        default: []
+      restic_backup_keep_daily:
+        description: Daily snapshots kept by restic forget.
+        type: int
+        default: 7
+      restic_backup_keep_weekly:
+        description: Weekly snapshots kept by restic forget.
+        type: int
+        default: 4
+      restic_backup_keep_monthly:
+        description: Monthly snapshots kept by restic forget.
+        type: int
+        default: 6
+      restic_backup_prune_weekday:
+        description: ISO weekday (1 Monday to 7 Sunday) on which prune and check run.
+        type: int
+        default: 7
+      restic_backup_check_subset:
+        description: Value passed to restic check --read-data-subset.
+        type: str
+        default: "5%"
+      restic_backup_schedule:
+        description: systemd OnCalendar expression for the timer.
+        type: str
+        default: "*-*-* 01:30:00"
+      restic_backup_randomized_delay:
+        description: systemd RandomizedDelaySec for the timer.
+        type: str
+        default: 30m
+      restic_backup_kuma_push_url:
+        description: Uptime Kuma push URL without a query string. Pinged only after a fully successful run. Empty disables it. Supply from vault.
+        type: str
+        default: ""
+        no_log: true

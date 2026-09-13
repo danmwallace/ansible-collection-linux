@@ -1,0 +1,96 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  vars:
+    restic_env: "set -a; . /etc/restic-backup/restic-backup.env; set +a;"
+  tasks:
+    - name: Stat installed files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/restic-backup/restic-backup.env
+        - /etc/restic-backup/id_ed25519
+        - /usr/local/libexec/restic-backup/run
+      register: _files
+
+    - name: Assert secrets and script are root-only
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.pw_name == 'root'
+          - item.stat.mode in ['0600', '0700']
+      loop: "{{ _files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Check the timer is enabled
+      ansible.builtin.command: systemctl is-enabled restic-backup.timer  # noqa command-instead-of-module
+      register: _timer
+      changed_when: false
+
+    - name: Assert the timer is enabled
+      ansible.builtin.assert:
+        that: _timer.stdout == 'enabled'
+
+    - name: Run one backup through the service
+      ansible.builtin.systemd:
+        name: restic-backup.service
+        state: started
+
+    - name: List the files in the latest snapshot
+      ansible.builtin.shell:
+        cmd: "{{ restic_env }} restic ls latest"
+        executable: /bin/bash
+      register: _ls
+      changed_when: false
+
+    - name: Assert the snapshot has the right content
+      ansible.builtin.assert:
+        that:
+          - "'/srv/app/keep.txt' in _ls.stdout_lines"
+          - "'/var/lib/restic-backup/dumps/pg-test.sql.gz' in _ls.stdout_lines"
+          - "'/var/lib/restic-backup/dumps/maria-test.sql.gz' in _ls.stdout_lines"
+          - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_state.db' in _ls.stdout_lines"
+          - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_profiles_a_state.db' in _ls.stdout_lines"
+          - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_profiles_b_state.db' in _ls.stdout_lines"
+          - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_lit[1].db' in _ls.stdout_lines"
+          - "'/srv/app/skip/skipped.txt' not in _ls.stdout_lines"
+          - "'/srv/app/data/state.db' not in _ls.stdout_lines"
+
+    - name: Restore one file into a scratch directory
+      ansible.builtin.shell:
+        cmd: "{{ restic_env }} rm -rf /tmp/restore && restic restore latest --target /tmp/restore --include /srv/app/keep.txt && cat /tmp/restore/srv/app/keep.txt"
+        executable: /bin/bash
+      register: _restore
+      changed_when: false
+
+    - name: Assert the restored file matches
+      ansible.builtin.assert:
+        that: _restore.stdout_lines[-1] == 'keep-me'
+
+    - name: Assert the restored SQLite dump is a readable database
+      ansible.builtin.shell:
+        cmd: >-
+          {{ restic_env }} restic dump latest /var/lib/restic-backup/dumps/sqlite/srv_app_data_profiles_b_state.db > /tmp/b.db
+          && sqlite3 /tmp/b.db 'select v from t'
+        executable: /bin/bash
+      register: _sqlite
+      changed_when: false
+      failed_when: _sqlite.stdout != '/srv/app/data/profiles/b'
+
+    - name: Run a second backup to prove the service is repeatable
+      ansible.builtin.systemd:
+        name: restic-backup.service
+        state: started
+
+    - name: Count snapshots
+      ansible.builtin.shell:
+        cmd: "{{ restic_env }} restic snapshots --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'"
+        executable: /bin/bash
+      register: _count
+      changed_when: false
+
+    - name: Assert two snapshots exist
+      ansible.builtin.assert:
+        that: _count.stdout | int == 2

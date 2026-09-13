@@ -1,0 +1,6 @@
+---
+# SPDX-License-Identifier: MIT
+_restic_backup_env:
+  RESTIC_REPOSITORY: "{{ restic_backup_repository }}"
+  RESTIC_PASSWORD: "{{ restic_backup_password }}"
+  RESTIC_CACHE_DIR: /var/cache/restic-backup

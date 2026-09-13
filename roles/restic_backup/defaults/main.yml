@@ -1,0 +1,39 @@
+---
+# SPDX-License-Identifier: MIT
+# Repository password. Required. Supply from vault; use letters and digits only
+# (the value is written to a systemd EnvironmentFile).
+restic_backup_password: ""
+
+# NAS connection
+restic_backup_nas_host: ""
+# Pinned NAS host key, "<type> <base64>" without a hostname.
+restic_backup_nas_host_key: ""
+restic_backup_nas_user: "restic-{{ inventory_hostname }}"
+restic_backup_nas_base_path: /mnt/ssd-mirror/backups/restic
+restic_backup_repository: "sftp:restic-backup-nas:{{ restic_backup_nas_base_path }}/{{ inventory_hostname }}"
+restic_backup_ssh_key_path: /etc/restic-backup/id_ed25519
+
+# What to back up
+restic_backup_paths: []
+restic_backup_excludes: []
+# List of {container: <name>, user: <postgres user>}
+restic_backup_postgres_dumps: []
+# List of {container: <name>}; root password is read from the container's MARIADB_ROOT_PASSWORD
+restic_backup_mariadb_dumps: []
+# Plain paths (must exist) or shell globs (may match nothing)
+restic_backup_sqlite_dbs: []
+
+# Retention and maintenance
+restic_backup_keep_daily: 7
+restic_backup_keep_weekly: 4
+restic_backup_keep_monthly: 6
+# ISO weekday for prune + check (1 = Monday, 7 = Sunday)
+restic_backup_prune_weekday: 7
+restic_backup_check_subset: "5%"
+
+# Schedule
+restic_backup_schedule: "*-*-* 01:30:00"
+restic_backup_randomized_delay: 30m
+
+# Uptime Kuma push URL without query string, e.g. https://uptime.example/api/push/<token>
+restic_backup_kuma_push_url: ""

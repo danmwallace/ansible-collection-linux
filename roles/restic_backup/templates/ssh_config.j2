@@ -1,0 +1,11 @@
+# Managed by Ansible - danmwallace.linux.restic_backup
+Host restic-backup-nas
+  HostName {{ restic_backup_nas_host }}
+  User {{ restic_backup_nas_user }}
+  IdentityFile {{ restic_backup_ssh_key_path }}
+  IdentitiesOnly yes
+  BatchMode yes
+  HostKeyAlias restic-backup-nas
+  UserKnownHostsFile /etc/restic-backup/known_hosts
+  StrictHostKeyChecking yes
+  ServerAliveInterval 60
