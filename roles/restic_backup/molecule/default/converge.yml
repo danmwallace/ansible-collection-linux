@@ -1,0 +1,35 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  pre_tasks:
+    - name: Read the test NAS host key
+      ansible.builtin.slurp:
+        src: /tmp/molecule-nas-host-key
+      register: _molecule_host_key
+  tasks:
+    - name: Apply restic_backup with test values
+      ansible.builtin.include_role:
+        name: danmwallace.linux.restic_backup
+      vars:
+        restic_backup_password: moleculeTestPassword123
+        restic_backup_nas_host: 127.0.0.1
+        restic_backup_nas_host_key: "{{ _molecule_host_key.content | b64decode | trim }}"
+        restic_backup_nas_user: restic-molecule
+        restic_backup_repository: sftp:restic-backup-nas:/srv/restic/molecule
+        restic_backup_paths:
+          - /srv/app
+        restic_backup_excludes:
+          - /srv/app/skip
+          - /srv/app/**/*.db
+          - /srv/app/**/*.db-wal
+          - /srv/app/**/*.db-shm
+        restic_backup_postgres_dumps:
+          - container: pg-test
+            user: tester
+        restic_backup_mariadb_dumps:
+          - container: maria-test
+        restic_backup_sqlite_dbs:
+          - /srv/app/data/state.db
+          - /srv/app/data/profiles/*/state.db
+          - /srv/app/nothing/*.db

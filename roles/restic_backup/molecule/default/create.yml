@@ -1,0 +1,20 @@
+---
+- name: Create
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure the molecule test image is built
+      containers.podman.podman_image:
+        name: localhost/restic-backup-molecule
+        path: "{{ playbook_dir }}"
+        build:
+          file: "{{ playbook_dir }}/Containerfile"
+        state: build
+
+    - name: Ensure the systemd test container is running
+      containers.podman.podman_container:
+        name: restic-backup-instance
+        image: localhost/restic-backup-molecule
+        systemd: always
+        state: started
+        command: /sbin/init

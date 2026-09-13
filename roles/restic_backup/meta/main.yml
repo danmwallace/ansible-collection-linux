@@ -1,0 +1,20 @@
+---
+# SPDX-License-Identifier: MIT
+galaxy_info:
+  role_name: restic_backup
+  namespace: danmwallace
+  author: Dan Wallace
+  description: Nightly restic backups of application data over SFTP, with database dumps and push-monitor alerts.
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Fedora
+      versions:
+        - all
+  galaxy_tags:
+    - backup
+    - restic
+    - sftp
+    - homelab
+
+dependencies: []

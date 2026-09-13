@@ -1,0 +1,88 @@
+---
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Ensure sshd is running
+      ansible.builtin.systemd:
+        name: sshd
+        state: started
+        enabled: true
+
+    - name: Ensure the SFTP-only test user exists
+      ansible.builtin.user:
+        name: restic-molecule
+        home: /srv/restic
+        create_home: true
+        shell: /bin/bash
+        password: "*"  # no password login; "!" would mark the account locked for sshd
+
+    - name: Ensure the repository directory is private to the test user
+      ansible.builtin.file:
+        path: /srv/restic/molecule
+        state: directory
+        owner: restic-molecule
+        group: restic-molecule
+        mode: "0700"
+
+    - name: Ensure the role's key directory exists
+      ansible.builtin.file:
+        path: /etc/restic-backup
+        state: directory
+        mode: "0700"
+
+    - name: Pre-generate the role's SSH identity so it can be authorised
+      ansible.builtin.command:
+        cmd: ssh-keygen -q -t ed25519 -N "" -C restic-backup@molecule -f /etc/restic-backup/id_ed25519
+        creates: /etc/restic-backup/id_ed25519
+
+    - name: Read the public key
+      ansible.builtin.slurp:
+        src: /etc/restic-backup/id_ed25519.pub
+      register: _molecule_pubkey
+
+    - name: Ensure authorized_keys directory permissions are strict
+      ansible.builtin.file:
+        path: /srv/restic/.ssh
+        state: directory
+        owner: restic-molecule
+        group: restic-molecule
+        mode: "0700"
+
+    - name: Authorise the key for SFTP only
+      ansible.builtin.copy:
+        dest: /srv/restic/.ssh/authorized_keys
+        content: >-
+          restrict,command="/usr/libexec/openssh/sftp-server"
+          {{ _molecule_pubkey.content | b64decode | trim }}
+        owner: restic-molecule
+        group: restic-molecule
+        mode: "0600"
+
+    - name: Record the local sshd host key for converge
+      ansible.builtin.shell:
+        cmd: set -o pipefail && cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub > /tmp/molecule-nas-host-key
+        executable: /bin/bash
+        creates: /tmp/molecule-nas-host-key
+
+    - name: Install a fake podman that emits a dump for exec calls
+      ansible.builtin.copy:
+        dest: /usr/local/bin/podman
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # molecule stand-in for "podman exec <container> <command...>"
+          echo "-- molecule fake dump from container $2"
+
+    - name: Ensure sample application data exists
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          mkdir -p /srv/app/data/profiles/a /srv/app/data/profiles/b /srv/app/skip
+          echo keep-me > /srv/app/keep.txt
+          echo skip-me > /srv/app/skip/skipped.txt
+          for d in /srv/app/data /srv/app/data/profiles/a /srv/app/data/profiles/b; do
+            sqlite3 "$d/state.db" "create table if not exists t(v text); insert into t values('$d');"
+          done
+        executable: /bin/bash
+        creates: /srv/app/keep.txt
