@@ -16,7 +16,7 @@
         - "{{ backup_dir }}"
         - "{{ backup_dir }}/gw"
         - "{{ backup_dir }}/sw"
-      register: _files
+      register: mikrotik_backup_t_files
 
     - name: Assert secrets, script and backup directories are root-only
       ansible.builtin.assert:
@@ -24,14 +24,14 @@
           - item.stat.exists
           - item.stat.pw_name == 'root'
           - item.stat.mode in ['0600', '0700']
-      loop: "{{ _files.results }}"
+      loop: "{{ mikrotik_backup_t_files.results }}"
       loop_control:
         label: "{{ item.item }}"
 
     - name: Read the rendered SSH aliases
       ansible.builtin.slurp:
         src: /etc/ssh/ssh_config.d/60-mikrotik-backup.conf
-      register: _ssh_config
+      register: mikrotik_backup_t_ssh_config
 
     - name: Assert the aliases carry the hardening options and per-device defaults
       ansible.builtin.assert:
@@ -44,36 +44,37 @@
           - "'BatchMode yes' in _cfg"
           - "'StrictHostKeyChecking yes' in _cfg"
       vars:
-        _cfg: "{{ _ssh_config.content | b64decode }}"
+        _cfg: "{{ mikrotik_backup_t_ssh_config.content | b64decode }}"
 
     - name: Check the timer is enabled
       ansible.builtin.command: systemctl is-enabled mikrotik-backup.timer  # noqa command-instead-of-module
-      register: _timer
+      register: mikrotik_backup_t_timer
       changed_when: false
 
     - name: Assert the timer is enabled
       ansible.builtin.assert:
-        that: _timer.stdout == 'enabled'
+        that: mikrotik_backup_t_timer.stdout == 'enabled'
 
     - name: Read today's date
       ansible.builtin.command: date +%Y%m%d
-      register: _today
+      register: mikrotik_backup_t_today
       changed_when: false
 
     - name: Plant stale local copies older than the retention window
-      ansible.builtin.command:
-        cmd: touch -d '20 days ago' {{ backup_dir }}/gw/home-01-20000101.rsc {{ backup_dir }}/sw/home-sw01-20000101.rsc
+      ansible.builtin.shell:
+        cmd: umask 077 && touch -d '20 days ago' {{ backup_dir }}/gw/home-01-20000101.rsc {{ backup_dir }}/sw/home-sw01-20000101.rsc
+        executable: /bin/bash
       changed_when: true
 
     - name: Run the pull while sw has an empty .backup and no .rsc
       ansible.builtin.command: /usr/local/libexec/mikrotik-backup/run
-      register: _partial_run
+      register: mikrotik_backup_t_partial_run
       changed_when: false
-      failed_when: _partial_run.rc == 0
+      failed_when: mikrotik_backup_t_partial_run.rc == 0
 
     - name: Show the failing run's output
       ansible.builtin.debug:
-        var: _partial_run.stderr_lines
+        var: mikrotik_backup_t_partial_run.stderr_lines
 
     - name: Stat the backup directories after the failing run
       ansible.builtin.find:
@@ -81,34 +82,38 @@
           - "{{ backup_dir }}/gw"
           - "{{ backup_dir }}/sw"
         hidden: true
-      register: _after_fail
+      register: mikrotik_backup_t_after_fail
 
     - name: Stat whether uptime kuma was pinged
       ansible.builtin.stat:
         path: /tmp/kuma-pushes
-      register: _kuma_after_fail
+      register: mikrotik_backup_t_kuma_after_fail
 
     - name: Assert the failing run kept going, logged clearly and skipped the push
       ansible.builtin.assert:
         that:
-          - "'mikrotik-backup: ERROR: sw: disk1/backups/home-sw01-' ~ _today.stdout ~ '.backup is missing or empty on the device' in _partial_run.stderr_lines"
-          - "'mikrotik-backup: ERROR: sw: disk1/backups/home-sw01-' ~ _today.stdout ~ '.rsc is missing or empty on the device' in _partial_run.stderr_lines"
-          - "'mikrotik-backup: ERROR: failed devices: sw; not reporting to uptime kuma' in _partial_run.stderr_lines"
-          - "'mikrotik-backup: gw: fetched home-01-' ~ _today.stdout ~ '.backup and home-01-' ~ _today.stdout ~ '.rsc' in _partial_run.stdout_lines"
-          - _names | sort == ['home-01-' ~ _today.stdout ~ '.backup', 'home-01-' ~ _today.stdout ~ '.rsc', 'home-sw01-20000101.rsc'] | sort
-          - _after_fail.files | selectattr('mode', 'ne', '0600') | list | length == 0
-          - not _kuma_after_fail.stat.exists
+          - "'mikrotik-backup: ERROR: sw: disk1/backups/home-sw01-' ~ _d ~ '.backup is missing or empty on the device' in _err"
+          - "'mikrotik-backup: ERROR: sw: disk1/backups/home-sw01-' ~ _d ~ '.rsc is missing or empty on the device' in _err"
+          - "'mikrotik-backup: ERROR: failed devices: sw; not reporting to uptime kuma' in _err"
+          - "'mikrotik-backup: gw: fetched home-01-' ~ _d ~ '.backup and home-01-' ~ _d ~ '.rsc' in _out"
+          # gw's stale copy is pruned after its good pull; sw failed, so its stale copy stays.
+          - _names | sort == ['home-01-' ~ _d ~ '.backup', 'home-01-' ~ _d ~ '.rsc', 'home-sw01-20000101.rsc'] | sort
+          - mikrotik_backup_t_after_fail.files | selectattr('mode', 'ne', '0600') | list | length == 0
+          - not mikrotik_backup_t_kuma_after_fail.stat.exists
       vars:
-        _names: "{{ _after_fail.files | map(attribute='path') | map('basename') | list }}"
+        _d: "{{ mikrotik_backup_t_today.stdout }}"
+        _err: "{{ mikrotik_backup_t_partial_run.stderr_lines }}"
+        _out: "{{ mikrotik_backup_t_partial_run.stdout_lines }}"
+        _names: "{{ mikrotik_backup_t_after_fail.files | map(attribute='path') | map('basename') | list }}"
 
     - name: Read a fetched file back
       ansible.builtin.slurp:
-        src: "{{ backup_dir }}/gw/home-01-{{ _today.stdout }}.rsc"
-      register: _gw_rsc
+        src: "{{ backup_dir }}/gw/home-01-{{ mikrotik_backup_t_today.stdout }}.rsc"
+      register: mikrotik_backup_t_gw_rsc
 
     - name: Assert the fetched file matches the device copy
       ansible.builtin.assert:
-        that: _gw_rsc.content | b64decode == "# fake export from home-01\n"
+        that: mikrotik_backup_t_gw_rsc.content | b64decode == "# fake export from home-01\n"
 
     - name: Complete sw's pair on the device
       ansible.builtin.copy:
@@ -118,8 +123,8 @@
         group: backup
         mode: "0644"
       loop:
-        - "home-sw01-{{ _today.stdout }}.backup"
-        - "home-sw01-{{ _today.stdout }}.rsc"
+        - "home-sw01-{{ mikrotik_backup_t_today.stdout }}.backup"
+        - "home-sw01-{{ mikrotik_backup_t_today.stdout }}.rsc"
 
     - name: Run one pull through the service
       ansible.builtin.systemd:
@@ -132,24 +137,24 @@
           - "{{ backup_dir }}/gw"
           - "{{ backup_dir }}/sw"
         hidden: true
-      register: _after_ok
+      register: mikrotik_backup_t_after_ok
 
     - name: Read the recorded uptime kuma pushes
       ansible.builtin.slurp:
         src: /tmp/kuma-pushes
-      register: _kuma
+      register: mikrotik_backup_t_kuma
 
     - name: Assert every device was pulled, stale copies pruned and kuma pinged once
       ansible.builtin.assert:
         that:
           - _names | sort == _expected | sort
-          - _after_ok.files | selectattr('mode', 'ne', '0600') | list | length == 0
-          - (_kuma.content | b64decode).splitlines() | length == 1
-          - "'https://kuma.invalid/api/push/molecule?status=up&msg=OK' in (_kuma.content | b64decode)"
+          - mikrotik_backup_t_after_ok.files | selectattr('mode', 'ne', '0600') | list | length == 0
+          - (mikrotik_backup_t_kuma.content | b64decode).splitlines() | length == 1
+          - "'https://kuma.invalid/api/push/molecule?status=up&msg=OK' in (mikrotik_backup_t_kuma.content | b64decode)"
       vars:
-        _names: "{{ _after_ok.files | map(attribute='path') | map('basename') | list }}"
+        _names: "{{ mikrotik_backup_t_after_ok.files | map(attribute='path') | map('basename') | list }}"
         _expected:
-          - "home-01-{{ _today.stdout }}.backup"
-          - "home-01-{{ _today.stdout }}.rsc"
-          - "home-sw01-{{ _today.stdout }}.backup"
-          - "home-sw01-{{ _today.stdout }}.rsc"
+          - "home-01-{{ mikrotik_backup_t_today.stdout }}.backup"
+          - "home-01-{{ mikrotik_backup_t_today.stdout }}.rsc"
+          - "home-sw01-{{ mikrotik_backup_t_today.stdout }}.backup"
+          - "home-sw01-{{ mikrotik_backup_t_today.stdout }}.rsc"

@@ -32,7 +32,7 @@
 
     - name: Read today's date as the device job would stamp it
       ansible.builtin.command: date +%Y%m%d
-      register: _today
+      register: mikrotik_backup_t_today
       changed_when: false
 
     # gw has a complete pair. sw has an empty .backup and no .rsc, so it must fail.
@@ -44,13 +44,13 @@
         group: backup
         mode: "0644"
       loop:
-        - file: "home-01-{{ _today.stdout }}.backup"
+        - file: "home-01-{{ mikrotik_backup_t_today.stdout }}.backup"
           content: "fake encrypted backup from home-01\n"
-        - file: "home-01-{{ _today.stdout }}.rsc"
+        - file: "home-01-{{ mikrotik_backup_t_today.stdout }}.rsc"
           content: "# fake export from home-01\n"
         - file: "home-01-19990101.rsc"
           content: "# an older export the role must not fetch\n"
-        - file: "home-sw01-{{ _today.stdout }}.backup"
+        - file: "home-sw01-{{ mikrotik_backup_t_today.stdout }}.backup"
           content: ""
 
     - name: Ensure the role's key directory exists
@@ -67,7 +67,7 @@
     - name: Read the public key
       ansible.builtin.slurp:
         src: /etc/mikrotik-backup/id_ed25519.pub
-      register: _molecule_pubkey
+      register: mikrotik_backup_t_pubkey
 
     - name: Ensure authorized_keys directory permissions are strict
       ansible.builtin.file:
@@ -82,7 +82,7 @@
         dest: /srv/routeros/.ssh/authorized_keys
         content: >-
           restrict,command="/usr/libexec/openssh/sftp-server"
-          {{ _molecule_pubkey.content | b64decode | trim }}
+          {{ mikrotik_backup_t_pubkey.content | b64decode | trim }}
         owner: backup
         group: backup
         mode: "0600"
