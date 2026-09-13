@@ -1,0 +1,48 @@
+#!/bin/bash
+# Re-attach a USB device to a running libvirt domain after it re-enumerates.
+# libvirt pins a running domain's USB hostdev to the bus/device numbers it
+# resolved at domain start; a replug or USB reset gets new numbers and
+# silently strands the guest. Acts only when the live binding is stale, so a
+# spurious udev event (or one caused by the attach itself) is a no-op.
+#
+# Usage: libvirt-usb-reattach <device-name>
+set -euo pipefail
+
+name=${1:?usage: libvirt-usb-reattach <device-name>}
+conf_dir=${LIBVIRT_USB_REATTACH_CONF_DIR:-/etc/libvirt-usb-reattach}
+sysfs_usb=${LIBVIRT_USB_REATTACH_SYSFS:-/sys/bus/usb/devices}
+
+# Defines DOMAIN, SERIAL, HOSTDEV_XML, LIBVIRT_URI.
+# shellcheck source=/dev/null
+. "$conf_dir/$name.conf"
+virsh=(virsh -c "$LIBVIRT_URI")
+
+if [[ "$("${virsh[@]}" domstate "$DOMAIN" 2>/dev/null)" != running ]]; then
+    echo "$DOMAIN not running; libvirt binds $name at domain start"
+    exit 0
+fi
+
+dev=""
+for d in "$sysfs_usb"/*; do
+    if [[ -f $d/serial && $(<"$d/serial") == "$SERIAL" ]]; then
+        dev=$d
+        break
+    fi
+done
+if [[ -z $dev ]]; then
+    echo "$name (serial $SERIAL) not present on host"
+    exit 0
+fi
+
+bus=$((10#$(<"$dev/busnum")))
+devnum=$((10#$(<"$dev/devnum")))
+
+if "${virsh[@]}" dumpxml "$DOMAIN" | grep -q "<address bus='$bus' device='$devnum'/>"; then
+    echo "$DOMAIN already bound to $name at $bus/$devnum"
+    exit 0
+fi
+
+echo "re-attaching $name at $bus/$devnum to $DOMAIN"
+# Detach fails harmlessly if libvirt already dropped the stale entry.
+"${virsh[@]}" detach-device "$DOMAIN" "$HOSTDEV_XML" --live || true
+"${virsh[@]}" attach-device "$DOMAIN" "$HOSTDEV_XML" --live

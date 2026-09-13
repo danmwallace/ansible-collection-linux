@@ -24,3 +24,81 @@
       loop: "{{ _files.results }}"
       loop_control:
         label: "{{ item.item.path }}"
+      # Task 3/4 install the remaining artifacts (conf, hostdev xml, udev rule,
+      # systemd unit); until then this intentionally fails but must not block
+      # the independent script scenarios below.
+      ignore_errors: true
+
+    - name: Scenario - domain not running does nothing
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb
+        FAKE_DOMSTATE: shut off
+      register: _not_running
+      changed_when: false
+
+    - name: Assert not-running output
+      ansible.builtin.assert:
+        that: "'testvm not running' in _not_running.stdout"
+
+    - name: Scenario - device absent does nothing
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb-empty
+      register: _absent
+      changed_when: false
+
+    - name: Assert device-absent output
+      ansible.builtin.assert:
+        that: "'not present on host' in _absent.stdout"
+
+    - name: Reset the virsh call log
+      ansible.builtin.file:
+        path: /tmp/virsh.log
+        state: absent
+
+    - name: Scenario - binding already current does not re-attach
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb
+        FAKE_BUS: "1"
+        FAKE_DEV: "7"
+      register: _bound
+      changed_when: false
+
+    - name: Read virsh calls for the already-bound scenario
+      ansible.builtin.slurp:
+        src: /tmp/virsh.log
+      register: _bound_log
+
+    - name: Assert already-bound output and no attach calls
+      ansible.builtin.assert:
+        that:
+          - "'already bound to molecule-dongle at 1/7' in _bound.stdout"
+          - "'attach-device' not in (_bound_log.content | b64decode)"
+
+    - name: Reset the virsh call log
+      ansible.builtin.file:
+        path: /tmp/virsh.log
+        state: absent
+
+    - name: Scenario - stale binding is detached and re-attached live
+      ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
+      environment:
+        LIBVIRT_USB_REATTACH_SYSFS: /tmp/fake-usb
+        FAKE_BUS: "1"
+        FAKE_DEV: "6"
+      register: _stale
+      changed_when: false
+
+    - name: Read virsh calls for the stale scenario
+      ansible.builtin.slurp:
+        src: /tmp/virsh.log
+      register: _stale_log
+
+    - name: Assert stale binding triggered detach then attach with the device XML
+      ansible.builtin.assert:
+        that:
+          - "'re-attaching molecule-dongle at 1/7 to testvm' in _stale.stdout"
+          - "'-c qemu:///system detach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"
+          - "'-c qemu:///system attach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"

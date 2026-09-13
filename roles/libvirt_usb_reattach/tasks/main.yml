@@ -16,3 +16,11 @@
   loop: "{{ libvirt_usb_reattach_devices }}"
   loop_control:
     label: "{{ item.name | default('(no name)') }}"
+
+- name: Ensure the re-attach script is installed
+  ansible.builtin.copy:
+    src: libvirt-usb-reattach
+    dest: /usr/local/sbin/libvirt-usb-reattach
+    owner: root
+    group: root
+    mode: "0755"

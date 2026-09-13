@@ -1,0 +1,36 @@
+---
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Ensure a stub virsh logs calls and fakes domstate/dumpxml
+      ansible.builtin.copy:
+        dest: /usr/local/bin/virsh
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # args: -c URI <subcommand> <domain> [file] [--live]
+          echo "$*" >> /tmp/virsh.log
+          case "$3" in
+              domstate) echo "${FAKE_DOMSTATE:-running}" ;;
+              dumpxml) echo "<hostdev><source><address bus='${FAKE_BUS:-1}' device='${FAKE_DEV:-6}'/></source></hostdev>" ;;
+          esac
+
+    - name: Ensure the fake sysfs device directory exists
+      ansible.builtin.file:
+        path: /tmp/fake-usb/1-1
+        state: directory
+        mode: "0755"
+
+    - name: Ensure a fake sysfs USB device exists (serial abc123 at bus 001 device 007)
+      ansible.builtin.copy:
+        dest: "/tmp/fake-usb/1-1/{{ item.key }}"
+        content: "{{ item.value }}\n"
+        mode: "0644"
+      loop: "{{ {'serial': 'abc123', 'busnum': '001', 'devnum': '007'} | dict2items }}"
+
+    - name: Ensure an empty fake sysfs exists for the device-absent case
+      ansible.builtin.file:
+        path: /tmp/fake-usb-empty
+        state: directory
+        mode: "0755"
