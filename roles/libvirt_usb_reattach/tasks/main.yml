@@ -17,6 +17,17 @@
   loop_control:
     label: "{{ item.name | default('(no name)') }}"
 
+- name: Ensure configuration directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/libvirt-usb-reattach
+    - /etc/libvirt/hostdev
+
 - name: Ensure the re-attach script is installed
   ansible.builtin.copy:
     src: libvirt-usb-reattach
@@ -24,3 +35,49 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: Ensure the re-attach unit template is installed
+  ansible.builtin.template:
+    src: libvirt-usb-reattach@.service.j2
+    dest: /etc/systemd/system/libvirt-usb-reattach@.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Ensure per-device re-attach config is present
+  ansible.builtin.template:
+    src: libvirt-usb-reattach.conf.j2
+    dest: "/etc/libvirt-usb-reattach/{{ item.name }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ libvirt_usb_reattach_devices }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure per-device hostdev XML is present
+  ansible.builtin.template:
+    src: hostdev.xml.j2
+    dest: "/etc/libvirt/hostdev/{{ item.name }}.xml"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ libvirt_usb_reattach_devices }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure per-device udev rules are present
+  ansible.builtin.template:
+    src: udev.rules.j2
+    dest: "/etc/udev/rules.d/99-libvirt-usb-reattach-{{ item.name }}.rules"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ libvirt_usb_reattach_devices }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload udev rules
+
+- name: Flush handlers so the unit is loadable before any udev event
+  ansible.builtin.meta: flush_handlers

@@ -98,3 +98,38 @@
       loop: "{{ _files.results }}"
       loop_control:
         label: "{{ item.item.path }}"
+
+    - name: Validate the udev rule syntax
+      ansible.builtin.command: udevadm verify /etc/udev/rules.d/99-libvirt-usb-reattach-molecule-dongle.rules
+      changed_when: false
+
+    - name: Read the udev rule
+      ansible.builtin.slurp:
+        src: /etc/udev/rules.d/99-libvirt-usb-reattach-molecule-dongle.rules
+      register: _rule
+
+    - name: Assert the rule matches by serial and starts the device's unit instance
+      ansible.builtin.assert:
+        that:
+          - "'ATTR{idVendor}==\"10c4\"' in (_rule.content | b64decode)"
+          - "'ATTR{idProduct}==\"ea60\"' in (_rule.content | b64decode)"
+          - "'ATTR{serial}==\"abc123\"' in (_rule.content | b64decode)"
+          - "'ENV{SYSTEMD_WANTS}+=\"libvirt-usb-reattach@molecule-dongle.service\"' in (_rule.content | b64decode)"
+
+    - name: Validate the unit instance
+      ansible.builtin.command: systemd-analyze verify libvirt-usb-reattach@molecule-dongle.service
+      changed_when: false
+
+    - name: Start the unit instance (real sysfs has no such device, so it exits cleanly)
+      ansible.builtin.systemd:
+        name: libvirt-usb-reattach@molecule-dongle.service
+        state: started
+
+    - name: Read the unit result
+      ansible.builtin.command: systemctl show -p Result --value libvirt-usb-reattach@molecule-dongle.service  # noqa command-instead-of-module
+      register: _unit_result
+      changed_when: false
+
+    - name: Assert the unit ran successfully
+      ansible.builtin.assert:
+        that: _unit_result.stdout == 'success'

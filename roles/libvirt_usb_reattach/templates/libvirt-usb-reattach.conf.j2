@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+DOMAIN={{ item.domain | quote }}
+SERIAL={{ item.serial | quote }}
+HOSTDEV_XML=/etc/libvirt/hostdev/{{ item.name }}.xml
+LIBVIRT_URI={{ libvirt_usb_reattach_libvirt_uri | quote }}

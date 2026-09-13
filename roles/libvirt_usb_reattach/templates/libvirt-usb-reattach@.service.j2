@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Re-attach USB device %i to its libvirt domain
+After={{ libvirt_usb_reattach_service_after | join(' ') }}
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/libvirt-usb-reattach %i
