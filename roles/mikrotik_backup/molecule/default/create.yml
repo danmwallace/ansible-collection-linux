@@ -1,0 +1,20 @@
+---
+- name: Create
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure the molecule test image is built
+      containers.podman.podman_image:
+        name: localhost/mikrotik-backup-molecule
+        path: "{{ playbook_dir }}"
+        build:
+          file: "{{ playbook_dir }}/Containerfile"
+        state: build
+
+    - name: Ensure the systemd test container is running
+      containers.podman.podman_container:
+        name: mikrotik-backup-instance
+        image: localhost/mikrotik-backup-molecule
+        systemd: always
+        state: started
+        command: /sbin/init

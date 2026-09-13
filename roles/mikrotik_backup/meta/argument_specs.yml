@@ -1,0 +1,94 @@
+---
+argument_specs:
+  main:
+    short_description: Nightly SFTP pull of MikroTik RouterOS backup files written by an on-device job.
+    description:
+      - Installs a dedicated SSH identity, pinned device host keys, a pull script and a systemd timer.
+      - Each night the script fetches today's <identity>-<YYYYMMDD>.backup and .rsc from every
+        device over SFTP. It never runs commands on the devices; creating the files is the
+        job of a RouterOS scheduler.
+      - Any device failure is logged, the other devices are still pulled, the Uptime Kuma push
+        is skipped and the service exits non-zero.
+    author:
+      - Dan Wallace [danmwallace]
+    options:
+      mikrotik_backup_devices:
+        description: RouterOS devices to pull backups from.
+        type: list
+        elements: dict
+        required: true
+        options:
+          name:
+            description:
+              - Short name. Used as the local subdirectory and in the SSH alias mikrotik-backup-<name>.
+              - Letters, digits, dot, underscore and hyphen only.
+            type: str
+            required: true
+          host:
+            description: Hostname or IP of the device's SSH service.
+            type: str
+            required: true
+          host_key:
+            description: Pinned SSH host key of the device, as "<type> <base64>" without a hostname.
+            type: str
+            required: true
+          identity:
+            description:
+              - File prefix written by the on-device job, normally the system identity.
+              - Letters, digits, dot, underscore and hyphen only.
+            type: str
+            required: true
+          user:
+            description: Device user to authenticate as. Falls back to mikrotik_backup_default_user.
+            type: str
+          port:
+            description: Device SSH port. Falls back to mikrotik_backup_default_port.
+            type: int
+          remote_dir:
+            description: Directory on the device holding the backup files. Falls back to mikrotik_backup_default_remote_dir.
+            type: str
+      mikrotik_backup_default_user:
+        description: Device user for entries without a user key.
+        type: str
+        default: backup
+      mikrotik_backup_default_port:
+        description: SSH port for entries without a port key.
+        type: int
+        default: 22
+      mikrotik_backup_default_remote_dir:
+        description: Remote directory for entries without a remote_dir key. Relative to the RouterOS file root.
+        type: str
+        default: disk1/backups
+      mikrotik_backup_dir:
+        description: Local directory receiving one subdirectory per device. Add it to restic_backup_paths.
+        type: str
+        default: /var/lib/mikrotik-backup
+      mikrotik_backup_retention_days:
+        description: Local copies older than this many days are deleted, per device, after that device's pull succeeds.
+        type: int
+        default: 14
+      mikrotik_backup_allow_previous_day:
+        description: When today's pair is missing or incomplete, accept yesterday's pair instead of failing the device.
+        type: bool
+        default: false
+      mikrotik_backup_ssh_key_path:
+        description: Private key path for the dedicated SSH identity. The public key is written next to it with a .pub suffix.
+        type: str
+        default: /etc/mikrotik-backup/id_ed25519
+      mikrotik_backup_verify_connectivity:
+        description: During the role run, open an SFTP session to every device and fail with the public key to authorise if any cannot be reached.
+        type: bool
+        default: true
+      mikrotik_backup_schedule:
+        description: systemd OnCalendar expression for the timer.
+        type: str
+        default: "*-*-* 01:00:00"
+      mikrotik_backup_randomized_delay:
+        description: systemd RandomizedDelaySec for the timer.
+        type: str
+        default: 5m
+      mikrotik_backup_kuma_push_url:
+        description: Uptime Kuma push URL without a query string. Pinged only after every device succeeded. Empty disables it. Supply from vault.
+        type: str
+        default: ""
+        no_log: true

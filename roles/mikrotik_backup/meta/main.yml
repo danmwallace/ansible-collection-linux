@@ -1,0 +1,21 @@
+---
+# SPDX-License-Identifier: MIT
+galaxy_info:
+  role_name: mikrotik_backup
+  namespace: danmwallace
+  author: Dan Wallace
+  description: Nightly SFTP pull of on-device MikroTik RouterOS backup and export files, with push-monitor alerts.
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Fedora
+      versions:
+        - all
+  galaxy_tags:
+    - backup
+    - mikrotik
+    - routeros
+    - sftp
+    - homelab
+
+dependencies: []

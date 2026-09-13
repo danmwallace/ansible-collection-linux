@@ -1,0 +1,9 @@
+---
+- name: Destroy
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure the test container is absent
+      containers.podman.podman_container:
+        name: mikrotik-backup-instance
+        state: absent

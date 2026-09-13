@@ -1,0 +1,11 @@
+# Managed by Ansible - danmwallace.linux.mikrotik_backup
+[Unit]
+Description=Nightly pull of MikroTik RouterOS backup files
+
+[Timer]
+OnCalendar={{ mikrotik_backup_schedule }}
+RandomizedDelaySec={{ mikrotik_backup_randomized_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+# Managed by Ansible - danmwallace.linux.mikrotik_backup
+{% for device in mikrotik_backup_devices %}
+Host mikrotik-backup-{{ device.name }}
+  HostName {{ device.host }}
+  Port {{ device.port | default(mikrotik_backup_default_port) }}
+  User {{ device.user | default(mikrotik_backup_default_user) }}
+  IdentityFile {{ mikrotik_backup_ssh_key_path }}
+  IdentitiesOnly yes
+  BatchMode yes
+  HostKeyAlias mikrotik-backup-{{ device.name }}
+  UserKnownHostsFile /etc/mikrotik-backup/known_hosts
+  StrictHostKeyChecking yes
+  ConnectTimeout 30
+  ServerAliveInterval 60
+{% endfor %}

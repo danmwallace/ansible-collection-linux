@@ -1,0 +1,4 @@
+---
+# SPDX-License-Identifier: MIT
+# Devices whose SFTP check ran and failed (evaluated lazily, after the check task registers).
+_mikrotik_backup_unreachable: "{{ _mikrotik_backup_sftp_check.results | default([]) | selectattr('rc', 'defined') | rejectattr('rc', 'eq', 0) | list }}"
