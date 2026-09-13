@@ -17,7 +17,8 @@ sysfs_usb=${LIBVIRT_USB_REATTACH_SYSFS:-/sys/bus/usb/devices}
 . "$conf_dir/$name.conf"
 virsh=(virsh -c "$LIBVIRT_URI")
 
-if [[ "$("${virsh[@]}" domstate "$DOMAIN" 2>/dev/null)" != running ]]; then
+state=$("${virsh[@]}" domstate "$DOMAIN")
+if [[ $state != running ]]; then
     echo "$DOMAIN not running; libvirt binds $name at domain start"
     exit 0
 fi
@@ -37,7 +38,8 @@ fi
 bus=$((10#$(<"$dev/busnum")))
 devnum=$((10#$(<"$dev/devnum")))
 
-if "${virsh[@]}" dumpxml "$DOMAIN" | grep -q "<address bus='$bus' device='$devnum'/>"; then
+xml=$("${virsh[@]}" dumpxml "$DOMAIN")
+if [[ $xml == *"<address bus='$bus' device='$devnum'/>"* ]]; then
     echo "$DOMAIN already bound to $name at $bus/$devnum"
     exit 0
 fi

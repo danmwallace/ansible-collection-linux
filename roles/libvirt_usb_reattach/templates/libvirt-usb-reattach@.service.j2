@@ -5,4 +5,5 @@ After={{ libvirt_usb_reattach_service_after | join(' ') }}
 
 [Service]
 Type=oneshot
+TimeoutStartSec=2min
 ExecStart=/usr/local/sbin/libvirt-usb-reattach %i

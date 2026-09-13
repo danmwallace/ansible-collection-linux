@@ -26,7 +26,7 @@ never edits domain definitions.
 
 | Variable | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `libvirt_usb_reattach_devices` | list of dict | yes | — | USB devices to keep attached to their libvirt domains. Each entry: `name` (str, required — short identifier, lowercase letters/digits/`_`/`-`, used in file and unit names), `domain` (str, required — libvirt domain the device is passed through to), `vendor_id` (str, required — USB vendor ID as 4 lowercase hex digits, no `0x`, e.g. `"10c4"`), `product_id` (str, required — USB product ID as 4 lowercase hex digits, no `0x`, e.g. `"ea60"`), `serial` (str, required — USB serial number, the sysfs `serial` attribute, distinguishes identical adapters). |
+| `libvirt_usb_reattach_devices` | list of dict | no | `[]` | USB devices to keep attached to their libvirt domains. An empty list installs the re-attach script and unit template but defines no per-device udev rules, config, or hostdev XML (no-op). Each entry: `name` (str, required — short identifier, lowercase letters/digits/`_`/`-`, used in file and unit names), `domain` (str, required — libvirt domain the device is passed through to; letters, digits, `_`/`.`/`+`/`:`/`-` only), `vendor_id` (str, required — USB vendor ID as 4 lowercase hex digits, no `0x`, e.g. `"10c4"`), `product_id` (str, required — USB product ID as 4 lowercase hex digits, no `0x`, e.g. `"ea60"`), `serial` (str, required — USB serial number, the sysfs `serial` attribute, distinguishes identical adapters; letters, digits, `.`/`_`/`:`/`-` only). |
 | `libvirt_usb_reattach_libvirt_uri` | str | no | `qemu:///system` | libvirt connection URI used by `virsh`. |
 | `libvirt_usb_reattach_service_after` | list of str | no | `[virtqemud.service, libvirtd.service]` | Units the re-attach service orders itself after. |
 
@@ -53,8 +53,9 @@ None declared in `meta/main.yml`.
 ## What the Role Does
 
 1. Asserts each entry in `libvirt_usb_reattach_devices` has a valid `name`
-   (`^[a-z0-9][a-z0-9_-]*$`), 4-hex-digit `vendor_id`/`product_id`, and a
-   non-empty `serial` and `domain`.
+   (`^[a-z0-9][a-z0-9_-]*$`), 4-hex-digit `vendor_id`/`product_id`, a `serial`
+   matching `^[A-Za-z0-9._:-]+$`, and a `domain` matching
+   `^[A-Za-z0-9_.+:-]+$`.
 2. Creates `/etc/libvirt-usb-reattach` and `/etc/libvirt/hostdev` (mode
    `0755`).
 3. Installs the re-attach script to `/usr/local/sbin/libvirt-usb-reattach`
@@ -92,7 +93,7 @@ rules on the next event regardless).
 3. Exits (no-op) if no device with the configured `SERIAL` is present under
    `/sys/bus/usb/devices`.
 4. Reads the device's current `busnum`/`devnum` and checks the domain's live
-   XML (`virsh dumpxml`) for a matching `<address bus='.../ device='...'/>`.
+   XML (`virsh dumpxml`) for a matching `<address bus='...' device='...'/>`.
    Exits (no-op) if it already matches.
 5. Otherwise, detaches the stale hostdev (`virsh detach-device --live`,
    ignoring failure — the entry may already be gone) and re-attaches it
@@ -104,9 +105,15 @@ rules on the next event regardless).
   the role does not edit domains.
 - Devices are attached by USB vendor:product — the libvirt hostdev XML has
   no serial match, only vendor/product. The serial only decides *when* the
-  udev rule fires. Two configured devices sharing the same vendor:product
-  are ambiguous — `virsh attach-device` may pick the wrong one, so the role
-  expects one device per vendor:product per host.
+  udev rule fires. libvirt does not "pick the wrong one" when devices
+  collide: if more than one device matching a given vendor:product is
+  present on the host at once (whether configured in this role or not),
+  `virsh attach-device` refuses with a "multiple USB devices" error — and
+  the domain's own persistent vendor/product hostdev has the same
+  limitation at domain start. The role therefore expects one device per
+  vendor:product per host.
+- The re-attach unit has `TimeoutStartSec=2min`; a hung `virsh` call fails
+  the unit instead of wedging indefinitely.
 - Removing a device from `libvirt_usb_reattach_devices` leaves its files
   behind (config, hostdev XML, udev rule) — there is no `state: absent`
   cleanup.

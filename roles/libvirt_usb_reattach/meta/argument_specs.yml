@@ -14,17 +14,23 @@ argument_specs:
       - Dan Wallace [danmwallace]
     options:
       libvirt_usb_reattach_devices:
-        description: USB devices to keep attached to their libvirt domains.
+        description: >-
+          USB devices to keep attached to their libvirt domains. An empty list
+          installs the re-attach script and unit template but defines no
+          per-device udev rules, config, or hostdev XML (no-op).
         type: list
         elements: dict
-        required: true
+        required: false
+        default: []
         options:
           name:
             description: Short identifier used in file and unit names. Lowercase letters, digits, "_" and "-".
             type: str
             required: true
           domain:
-            description: libvirt domain the device is passed through to.
+            description: >-
+              libvirt domain the device is passed through to. Letters, digits,
+              "_", ".", "+", ":" and "-" only.
             type: str
             required: true
           vendor_id:
@@ -36,7 +42,9 @@ argument_specs:
             type: str
             required: true
           serial:
-            description: USB serial number (sysfs "serial" attribute); distinguishes identical adapters.
+            description: >-
+              USB serial number (sysfs "serial" attribute); distinguishes identical
+              adapters. Letters, digits, ".", "_", ":" and "-" only.
             type: str
             required: true
       libvirt_usb_reattach_libvirt_uri:
