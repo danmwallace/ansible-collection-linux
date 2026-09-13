@@ -7,6 +7,12 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Added
+
+- `libvirt_usb_reattach` role: udev rule per USB device (matched by serial) starts a
+  oneshot unit that live detach/attaches the device to its libvirt domain when the
+  domain's bus/device binding has gone stale after a replug or reset.
+
 ## [1.4.0] - 2026-09-12
 
 ### Added
