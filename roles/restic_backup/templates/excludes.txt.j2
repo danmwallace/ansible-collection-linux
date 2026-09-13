@@ -1,0 +1,4 @@
+# Managed by Ansible - danmwallace.linux.restic_backup
+{% for pattern in restic_backup_excludes %}
+{{ pattern }}
+{% endfor %}

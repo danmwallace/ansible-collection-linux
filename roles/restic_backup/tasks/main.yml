@@ -11,3 +11,96 @@
       restic_backup_password, restic_backup_nas_host, restic_backup_nas_host_key and
       restic_backup_paths must all be set.
   no_log: true
+
+- name: Ensure restic is installed
+  ansible.builtin.package:
+    name: restic
+    state: present
+
+- name: Ensure sqlite is installed when SQLite databases are backed up
+  ansible.builtin.package:
+    name: sqlite
+    state: present
+  when: restic_backup_sqlite_dbs | length > 0
+
+- name: Ensure restic backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /etc/restic-backup
+    - /usr/local/libexec/restic-backup
+    - /var/lib/restic-backup
+    - /var/cache/restic-backup
+
+- name: Ensure the dedicated SSH identity exists
+  ansible.builtin.command:
+    cmd: >-
+      ssh-keygen -q -t ed25519 -N ""
+      -C "restic-backup@{{ inventory_hostname }}"
+      -f {{ restic_backup_ssh_key_path }}
+    creates: "{{ restic_backup_ssh_key_path }}"
+
+- name: Ensure the NAS host key is pinned
+  ansible.builtin.known_hosts:
+    path: /etc/restic-backup/known_hosts
+    name: restic-backup-nas
+    key: "restic-backup-nas {{ restic_backup_nas_host_key }}"
+    state: present
+
+- name: Ensure the SSH alias for the backup NAS is configured
+  ansible.builtin.template:
+    src: ssh_config.j2
+    dest: /etc/ssh/ssh_config.d/60-restic-backup.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Ensure the restic environment file is present
+  ansible.builtin.template:
+    src: restic-backup.env.j2
+    dest: /etc/restic-backup/restic-backup.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Ensure the restic exclude file is present
+  ansible.builtin.template:
+    src: excludes.txt.j2
+    dest: /etc/restic-backup/excludes.txt
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Ensure the backup script is present
+  ansible.builtin.template:
+    src: run.sh.j2
+    dest: /usr/local/libexec/restic-backup/run
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure the restic backup systemd units are present
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - restic-backup.service
+    - restic-backup.timer
+  notify: Reload systemd
+
+- name: Flush handlers so systemd sees the units
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure the restic backup timer is enabled and started
+  ansible.builtin.systemd:
+    name: restic-backup.timer
+    enabled: true
+    state: started

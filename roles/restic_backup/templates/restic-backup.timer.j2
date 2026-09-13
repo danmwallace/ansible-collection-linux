@@ -1,0 +1,11 @@
+# Managed by Ansible - danmwallace.linux.restic_backup
+[Unit]
+Description=Nightly restic backup of application data
+
+[Timer]
+OnCalendar={{ restic_backup_schedule }}
+RandomizedDelaySec={{ restic_backup_randomized_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

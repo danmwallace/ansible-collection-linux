@@ -1,0 +1,13 @@
+# Managed by Ansible - danmwallace.linux.restic_backup
+[Unit]
+Description=Restic backup of application data
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/restic-backup/restic-backup.env
+ExecStart=/usr/local/libexec/restic-backup/run
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=4h

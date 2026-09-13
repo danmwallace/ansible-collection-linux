@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Managed by Ansible - danmwallace.linux.restic_backup
+set -euo pipefail
+
+exec 9>/run/restic-backup.lock
+flock -n 9 || { echo "restic-backup: another run holds the lock" >&2; exit 1; }
+
+dumps=/var/lib/restic-backup/dumps
+log() { printf 'restic-backup: %s\n' "$*"; }
+
+log "clearing stale locks"
+restic unlock
+
+rm -rf "$dumps"
+install -d -m 0700 "$dumps" "$dumps/sqlite"
+
+{% for db in restic_backup_postgres_dumps %}
+log "dumping postgres container {{ db.container }}"
+podman exec {{ db.container | quote }} pg_dumpall -U {{ db.user | quote }} | gzip > "$dumps/{{ db.container }}.sql.gz"
+{% endfor %}
+{% for db in restic_backup_mariadb_dumps %}
+log "dumping mariadb container {{ db.container }}"
+podman exec {{ db.container | quote }} sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb-dump --all-databases --single-transaction -uroot' | gzip > "$dumps/{{ db.container }}.sql.gz"
+{% endfor %}
+{% if restic_backup_sqlite_dbs | length > 0 %}
+shopt -s nullglob
+{% for entry in restic_backup_sqlite_dbs %}
+{% if '*' in entry or '?' in entry or '[' in entry %}
+for f in {{ entry }}; do
+{% else %}
+[ -e {{ entry | quote }} ] || { log "missing sqlite database {{ entry }}"; exit 1; }
+for f in {{ entry | quote }}; do
+{% endif %}
+  name="${f#/}"
+  name="${name//\//_}"
+  log "backing up sqlite database $f"
+  sqlite3 "$f" ".backup '$dumps/sqlite/$name'"
+done
+{% endfor %}
+shopt -u nullglob
+{% endif %}
+
+log "running restic backup"
+restic backup --one-file-system --tag nightly \
+  --exclude-file /etc/restic-backup/excludes.txt \
+{% for path in restic_backup_paths %}
+  {{ path | quote }} \
+{% endfor %}
+  "$dumps"
+
+log "applying retention"
+restic forget --keep-daily {{ restic_backup_keep_daily }} --keep-weekly {{ restic_backup_keep_weekly }} --keep-monthly {{ restic_backup_keep_monthly }}
+
+if [ "$(date +%u)" = "{{ restic_backup_prune_weekday }}" ]; then
+  log "weekly prune and integrity check"
+  restic prune
+  restic check --read-data-subset={{ restic_backup_check_subset }}
+fi
+
+if [ -n "${RESTIC_BACKUP_KUMA_PUSH_URL:-}" ]; then
+  log "reporting success to uptime kuma"
+  curl -fsS -m 30 -o /dev/null "${RESTIC_BACKUP_KUMA_PUSH_URL}?status=up&msg=OK"
+fi
+
+log "done"
