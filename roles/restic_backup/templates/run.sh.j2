@@ -25,7 +25,7 @@ podman exec {{ db.container | quote }} sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD"
 {% if restic_backup_sqlite_dbs | length > 0 %}
 shopt -s nullglob
 {% for entry in restic_backup_sqlite_dbs %}
-{% if '*' in entry or '?' in entry or '[' in entry %}
+{% if '*' in entry or '?' in entry %}
 for f in {{ entry }}; do
 {% else %}
 [ -e {{ entry | quote }} ] || { log "missing sqlite database {{ entry }}"; exit 1; }

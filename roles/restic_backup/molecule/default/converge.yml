@@ -33,3 +33,4 @@
           - /srv/app/data/state.db
           - /srv/app/data/profiles/*/state.db
           - /srv/app/nothing/*.db
+          - "/srv/app/data/lit[1].db"

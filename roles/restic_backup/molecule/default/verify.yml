@@ -54,6 +54,7 @@
           - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_state.db' in _ls.stdout_lines"
           - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_profiles_a_state.db' in _ls.stdout_lines"
           - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_profiles_b_state.db' in _ls.stdout_lines"
+          - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_lit[1].db' in _ls.stdout_lines"
           - "'/srv/app/skip/skipped.txt' not in _ls.stdout_lines"
           - "'/srv/app/data/state.db' not in _ls.stdout_lines"
 

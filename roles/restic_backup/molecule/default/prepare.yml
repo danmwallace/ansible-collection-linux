@@ -86,3 +86,11 @@
           done
         executable: /bin/bash
         creates: /srv/app/keep.txt
+
+    - name: Ensure a literal SQLite path containing bracket characters exists
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          sqlite3 "/srv/app/data/lit[1].db" "create table if not exists t(v text); insert into t values('/srv/app/data/lit[1].db');"
+        executable: /bin/bash
+        creates: "/srv/app/data/lit[1].db"
