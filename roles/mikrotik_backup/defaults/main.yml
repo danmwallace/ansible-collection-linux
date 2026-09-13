@@ -1,0 +1,34 @@
+---
+# SPDX-License-Identifier: MIT
+# Devices to pull from. Each entry:
+#   name:       local subdirectory and SSH alias suffix (mikrotik-backup-<name>)
+#   host:       hostname or IP the device's SSH service listens on
+#   host_key:   pinned SSH host key, "<type> <base64>" without a hostname
+#   identity:   file prefix the on-device job writes (<identity>-<YYYYMMDD>.backup/.rsc)
+#   user:       optional, defaults to mikrotik_backup_default_user
+#   port:       optional, defaults to mikrotik_backup_default_port
+#   remote_dir: optional, defaults to mikrotik_backup_default_remote_dir
+mikrotik_backup_devices: []
+
+# Per-device fallbacks
+mikrotik_backup_default_user: backup
+mikrotik_backup_default_port: 22
+mikrotik_backup_default_remote_dir: disk1/backups
+
+# Local storage
+mikrotik_backup_dir: /var/lib/mikrotik-backup
+mikrotik_backup_retention_days: 14
+# Accept yesterday's pair when today's is missing (the run still logs today's miss)
+mikrotik_backup_allow_previous_day: false
+
+# SSH identity
+mikrotik_backup_ssh_key_path: /etc/mikrotik-backup/id_ed25519
+# Test SFTP access to every device during the role run and fail with the key to authorise
+mikrotik_backup_verify_connectivity: true
+
+# Schedule: after the on-device 00:30 job, before restic_backup at 01:30
+mikrotik_backup_schedule: "*-*-* 01:00:00"
+mikrotik_backup_randomized_delay: 5m
+
+# Uptime Kuma push URL without query string, e.g. https://uptime.example/api/push/<token>
+mikrotik_backup_kuma_push_url: ""

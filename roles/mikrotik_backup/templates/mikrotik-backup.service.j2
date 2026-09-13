@@ -1,0 +1,12 @@
+# Managed by Ansible - danmwallace.linux.mikrotik_backup
+[Unit]
+Description=Pull MikroTik RouterOS backup files over SFTP
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mikrotik-backup/mikrotik-backup.env
+ExecStart=/usr/local/libexec/mikrotik-backup/run
+Nice=10
+TimeoutStartSec=30min

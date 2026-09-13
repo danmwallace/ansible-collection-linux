@@ -1,0 +1,103 @@
+---
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  vars:
+    remote_dir: /srv/routeros/disk1/backups
+  tasks:
+    - name: Ensure sshd is running
+      ansible.builtin.systemd:
+        name: sshd
+        state: started
+        enabled: true
+
+    - name: Ensure the stand-in RouterOS backup user exists
+      ansible.builtin.user:
+        name: backup
+        home: /srv/routeros
+        create_home: true
+        shell: /bin/bash
+        password: "*"  # no password login; "!" would mark the account locked for sshd
+
+    - name: Ensure the stand-in USB backup directory exists
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: backup
+        group: backup
+        mode: "0755"
+      loop:
+        - /srv/routeros/disk1
+        - "{{ remote_dir }}"
+
+    - name: Read today's date as the device job would stamp it
+      ansible.builtin.command: date +%Y%m%d
+      register: mikrotik_backup_t_today
+      changed_when: false
+
+    # gw has a complete pair. sw has an empty .backup and no .rsc, so it must fail.
+    - name: Ensure device fixture files exist
+      ansible.builtin.copy:
+        dest: "{{ remote_dir }}/{{ item.file }}"
+        content: "{{ item.content }}"
+        owner: backup
+        group: backup
+        mode: "0644"
+      loop:
+        - file: "home-01-{{ mikrotik_backup_t_today.stdout }}.backup"
+          content: "fake encrypted backup from home-01\n"
+        - file: "home-01-{{ mikrotik_backup_t_today.stdout }}.rsc"
+          content: "# fake export from home-01\n"
+        - file: "home-01-19990101.rsc"
+          content: "# an older export the role must not fetch\n"
+        - file: "home-sw01-{{ mikrotik_backup_t_today.stdout }}.backup"
+          content: ""
+
+    - name: Ensure the role's key directory exists
+      ansible.builtin.file:
+        path: /etc/mikrotik-backup
+        state: directory
+        mode: "0700"
+
+    - name: Pre-generate the role's SSH identity so it can be authorised
+      ansible.builtin.command:
+        cmd: ssh-keygen -q -t ed25519 -N "" -C mikrotik-backup@molecule -f /etc/mikrotik-backup/id_ed25519
+        creates: /etc/mikrotik-backup/id_ed25519
+
+    - name: Read the public key
+      ansible.builtin.slurp:
+        src: /etc/mikrotik-backup/id_ed25519.pub
+      register: mikrotik_backup_t_pubkey
+
+    - name: Ensure authorized_keys directory permissions are strict
+      ansible.builtin.file:
+        path: /srv/routeros/.ssh
+        state: directory
+        owner: backup
+        group: backup
+        mode: "0700"
+
+    - name: Authorise the key for SFTP only
+      ansible.builtin.copy:
+        dest: /srv/routeros/.ssh/authorized_keys
+        content: >-
+          restrict,command="/usr/libexec/openssh/sftp-server"
+          {{ mikrotik_backup_t_pubkey.content | b64decode | trim }}
+        owner: backup
+        group: backup
+        mode: "0600"
+
+    - name: Record the local sshd host key for converge
+      ansible.builtin.shell:
+        cmd: set -o pipefail && cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub > /tmp/molecule-device-host-key
+        executable: /bin/bash
+        creates: /tmp/molecule-device-host-key
+
+    - name: Install a fake curl that records Uptime Kuma pushes
+      ansible.builtin.copy:
+        dest: /usr/local/bin/curl
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # molecule stand-in for the Uptime Kuma push
+          echo "$@" >> /tmp/kuma-pushes

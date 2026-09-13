@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Managed by Ansible - danmwallace.linux.mikrotik_backup
+set -euo pipefail
+umask 077
+
+exec 9>/run/mikrotik-backup.lock
+flock -n 9 || { echo "mikrotik-backup: another run holds the lock" >&2; exit 1; }
+
+backup_dir={{ mikrotik_backup_dir | quote }}
+retention_minutes=$(( {{ mikrotik_backup_retention_days | int }} * 1440 ))
+allow_previous_day={{ mikrotik_backup_allow_previous_day | bool | ternary('1', '0') }}
+pubkey={{ (mikrotik_backup_ssh_key_path ~ '.pub') | quote }}
+
+log() { printf 'mikrotik-backup: %s\n' "$*"; }
+err() { printf 'mikrotik-backup: ERROR: %s\n' "$*" >&2; }
+
+# Evaluated once so every device is checked against the same day, even if the run crosses midnight.
+today=$(date +%Y%m%d)
+yesterday=$(date -d yesterday +%Y%m%d)
+failed=()
+
+# fetch_pair <name> <remote_dir> <identity> <stamp>
+# Downloads <identity>-<stamp>.backup and .rsc into partial files, then renames
+# both into place only if both arrived non-empty. RouterOS's SFTP server lists
+# directories in no useful order, so files are requested by exact name.
+fetch_pair() {
+    local name=$1 remote_dir=$2 identity=$3 stamp=$4
+    local local_dir="$backup_dir/$name" batch ext file ok=1 rc=0
+
+    batch=$(mktemp) || return 2
+    for ext in backup rsc; do
+        file="$identity-$stamp.$ext"
+        rm -f "$local_dir/.$file.partial"
+        # "-" prefix: keep going after a missing file so the log names both misses.
+        printf -- '-get "%s/%s" "%s/.%s.partial"\n' "$remote_dir" "$file" "$local_dir" "$file" >> "$batch"
+    done
+    sftp -q -b "$batch" "mikrotik-backup-$name" || rc=$?
+    rm -f "$batch"
+    if [ "$rc" -ne 0 ]; then
+        err "$name: sftp session failed (exit $rc); is $pubkey authorised for the device's backup user?"
+        rm -f "$local_dir"/.*.partial
+        return 2
+    fi
+
+    for ext in backup rsc; do
+        file="$identity-$stamp.$ext"
+        if [ ! -s "$local_dir/.$file.partial" ]; then
+            err "$name: $remote_dir/$file is missing or empty on the device"
+            ok=0
+        fi
+    done
+    if [ "$ok" -ne 1 ]; then
+        rm -f "$local_dir"/.*.partial
+        return 1
+    fi
+
+    for ext in backup rsc; do
+        file="$identity-$stamp.$ext"
+        # errexit is suspended inside a function called from a condition, so check explicitly.
+        chmod 0600 "$local_dir/.$file.partial" || return 2
+        mv -f "$local_dir/.$file.partial" "$local_dir/$file" || return 2
+    done
+    log "$name: fetched $identity-$stamp.backup and $identity-$stamp.rsc"
+    return 0
+}
+
+# pull_device <name> <remote_dir> <identity>
+pull_device() {
+    local name=$1 remote_dir=$2 identity=$3 rc=0
+
+    install -d -m 0700 "$backup_dir/$name" || return 1
+    rm -f "$backup_dir/$name"/.*.partial
+
+    fetch_pair "$name" "$remote_dir" "$identity" "$today" || rc=$?
+    if [ "$rc" -eq 1 ] && [ "$allow_previous_day" = 1 ]; then
+        log "$name: today's files incomplete, trying $yesterday"
+        rc=0
+        fetch_pair "$name" "$remote_dir" "$identity" "$yesterday" || rc=$?
+    fi
+    [ "$rc" -eq 0 ] || return 1
+
+    # Prune only after a good pull, so a device that stays down keeps its last copies.
+    find "$backup_dir/$name" -maxdepth 1 -type f \( -name '*.backup' -o -name '*.rsc' \) \
+        -mmin +"$retention_minutes" -print -delete | sed "s|^|mikrotik-backup: $name: pruned |"
+}
+
+{% for device in mikrotik_backup_devices %}
+log "pulling {{ device.name }}"
+if ! pull_device {{ device.name | quote }} {{ device.remote_dir | default(mikrotik_backup_default_remote_dir) | quote }} {{ device.identity | quote }}; then
+    failed+=({{ device.name | quote }})
+fi
+{% endfor %}
+
+if [ -n "${failed[*]:-}" ]; then
+    err "failed devices: ${failed[*]}; not reporting to uptime kuma"
+    exit 1
+fi
+
+if [ -n "${MIKROTIK_BACKUP_KUMA_PUSH_URL:-}" ]; then
+    log "reporting success to uptime kuma"
+    curl -fsS -m 30 -o /dev/null "${MIKROTIK_BACKUP_KUMA_PUSH_URL}?status=up&msg=OK"
+fi
+
+log "done"
