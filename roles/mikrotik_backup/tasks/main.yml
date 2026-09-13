@@ -1,0 +1,142 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Assert the device list is usable
+  ansible.builtin.assert:
+    that:
+      - mikrotik_backup_devices | length > 0
+      - mikrotik_backup_devices | map(attribute='name') | unique | length == mikrotik_backup_devices | length
+      - mikrotik_backup_devices | rejectattr('name', 'match', '^[A-Za-z0-9._-]+$') | length == 0
+      - mikrotik_backup_devices | rejectattr('identity', 'match', '^[A-Za-z0-9._-]+$') | length == 0
+      - mikrotik_backup_devices | selectattr('host_key', 'match', '^\S+ \S+$') | length == mikrotik_backup_devices | length
+      - mikrotik_backup_devices | map(attribute='remote_dir', default=mikrotik_backup_default_remote_dir) | reject('match', '^[A-Za-z0-9._/-]+$') | length == 0
+    fail_msg: >-
+      mikrotik_backup_devices must be a non-empty list with unique names. name, identity and
+      remote_dir may only contain letters, digits, '.', '_' and '-' (plus '/' in remote_dir),
+      and host_key must be "<type> <base64>" without a hostname.
+
+- name: Ensure the SFTP client is installed
+  ansible.builtin.package:
+    name: openssh-clients
+    state: present
+
+- name: Ensure mikrotik backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop: "{{ ['/etc/mikrotik-backup', mikrotik_backup_ssh_key_path | dirname, '/usr/local/libexec/mikrotik-backup', mikrotik_backup_dir] | unique }}"
+
+- name: Ensure per-device backup directories exist
+  ansible.builtin.file:
+    path: "{{ mikrotik_backup_dir }}/{{ item.name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop: "{{ mikrotik_backup_devices }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure the dedicated SSH identity exists
+  ansible.builtin.command:
+    cmd: >-
+      ssh-keygen -q -t ed25519 -N ""
+      -C "mikrotik-backup@{{ inventory_hostname }}"
+      -f {{ mikrotik_backup_ssh_key_path }}
+    creates: "{{ mikrotik_backup_ssh_key_path }}"
+
+- name: Ensure the device host keys are pinned
+  ansible.builtin.known_hosts:
+    path: /etc/mikrotik-backup/known_hosts
+    name: "mikrotik-backup-{{ item.name }}"
+    key: "mikrotik-backup-{{ item.name }} {{ item.host_key }}"
+    state: present
+  loop: "{{ mikrotik_backup_devices }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure the SSH aliases for the devices are configured
+  ansible.builtin.template:
+    src: ssh_config.j2
+    dest: /etc/ssh/ssh_config.d/60-mikrotik-backup.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Ensure the mikrotik backup environment file is present
+  ansible.builtin.template:
+    src: mikrotik-backup.env.j2
+    dest: /etc/mikrotik-backup/mikrotik-backup.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Ensure the pull script is present
+  ansible.builtin.template:
+    src: run.sh.j2
+    dest: /usr/local/libexec/mikrotik-backup/run
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Check that every device accepts the SFTP session
+  ansible.builtin.command:
+    argv:
+      - sftp
+      - -q
+      - -b
+      - "-"
+      - "mikrotik-backup-{{ item.name }}"
+    stdin: "cd {{ item.remote_dir | default(mikrotik_backup_default_remote_dir) }}"
+  loop: "{{ mikrotik_backup_devices }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _mikrotik_backup_sftp_check
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only; needed so check-mode previews have a result
+  when: mikrotik_backup_verify_connectivity
+
+- name: Read the SSH public key for error reporting
+  ansible.builtin.slurp:
+    src: "{{ mikrotik_backup_ssh_key_path }}.pub"
+  register: _mikrotik_backup_pubkey
+  when:
+    - _mikrotik_backup_unreachable | length > 0
+    - not ansible_check_mode
+
+- name: Fail with the key to authorise when a device cannot be opened
+  ansible.builtin.fail:
+    msg: >-
+      SFTP to {{ _mikrotik_backup_unreachable | map(attribute='item.name') | join(', ') }} failed:
+      {% for r in _mikrotik_backup_unreachable %}[{{ r.item.name }}: {{ r.stderr | default('') | trim }}] {% endfor %}
+      If a device has not authorised this host yet, import this public key for its
+      backup user and check the remote directory exists: {{ _mikrotik_backup_pubkey.content | b64decode | trim }}
+  # In check mode the SSH aliases and pinned host keys may not be written yet.
+  when:
+    - _mikrotik_backup_unreachable | length > 0
+    - not ansible_check_mode
+
+- name: Ensure the mikrotik backup systemd units are present
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - mikrotik-backup.service
+    - mikrotik-backup.timer
+  notify: Reload systemd
+
+- name: Flush handlers so systemd sees the units
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure the mikrotik backup timer is enabled and started
+  ansible.builtin.systemd:
+    name: mikrotik-backup.timer
+    enabled: true
+    state: started

@@ -1,0 +1,29 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  pre_tasks:
+    - name: Read the test device host key
+      ansible.builtin.slurp:
+        src: /tmp/molecule-device-host-key
+      register: _molecule_host_key
+  tasks:
+    - name: Apply mikrotik_backup with test values
+      ansible.builtin.include_role:
+        name: danmwallace.linux.mikrotik_backup
+      vars:
+        mikrotik_backup_devices:
+          # Relies on the default user, port and remote_dir.
+          - name: gw
+            host: 127.0.0.1
+            host_key: "{{ _molecule_host_key.content | b64decode | trim }}"
+            identity: home-01
+          # Sets every optional key explicitly.
+          - name: sw
+            host: localhost
+            host_key: "{{ _molecule_host_key.content | b64decode | trim }}"
+            identity: home-sw01
+            user: backup
+            port: 22
+            remote_dir: disk1/backups
+        mikrotik_backup_kuma_push_url: https://kuma.invalid/api/push/molecule
