@@ -91,7 +91,7 @@ if ! pull_device {{ device.name | quote }} {{ device.remote_dir | default(mikrot
 fi
 {% endfor %}
 
-if [ "${#failed[@]}" -gt 0 ]; then
+if [ -n "${failed[*]:-}" ]; then
     err "failed devices: ${failed[*]}; not reporting to uptime kuma"
     exit 1
 fi
