@@ -7,6 +7,15 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-12
+
+### Added
+
+- `restic_backup` role: nightly restic backups of application data to an SFTP
+  repository with Postgres, MariaDB and SQLite dumps, retention, weekly prune and
+  integrity check, and an optional Uptime Kuma push ping. Initialises the repository
+  on first run; the backup service never does, so a deleted repository fails loudly.
+
 ## [1.1.0] - 2026-05-28
 
 ### Changed
