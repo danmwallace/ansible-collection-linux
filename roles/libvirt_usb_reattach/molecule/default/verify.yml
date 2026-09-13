@@ -3,32 +3,6 @@
   hosts: molecule
   gather_facts: false
   tasks:
-    - name: Stat installed files
-      ansible.builtin.stat:
-        path: "{{ item.path }}"
-      loop:
-        - { path: /usr/local/sbin/libvirt-usb-reattach, mode: "0755" }
-        - { path: /etc/systemd/system/libvirt-usb-reattach@.service, mode: "0644" }
-        - { path: /etc/libvirt-usb-reattach/molecule-dongle.conf, mode: "0644" }
-        - { path: /etc/libvirt/hostdev/molecule-dongle.xml, mode: "0644" }
-        - { path: /etc/udev/rules.d/99-libvirt-usb-reattach-molecule-dongle.rules, mode: "0644" }
-      register: _files
-
-    - name: Assert files exist, are root-owned, and have the expected mode
-      ansible.builtin.assert:
-        that:
-          - item.stat.exists
-          - item.stat.pw_name == 'root'
-          - item.stat.mode == item.item.mode
-        fail_msg: "{{ item.item.path }} missing or wrong owner/mode"
-      loop: "{{ _files.results }}"
-      loop_control:
-        label: "{{ item.item.path }}"
-      # Task 3/4 install the remaining artifacts (conf, hostdev xml, udev rule,
-      # systemd unit); until then this intentionally fails but must not block
-      # the independent script scenarios below.
-      ignore_errors: true
-
     - name: Scenario - domain not running does nothing
       ansible.builtin.command: /usr/local/sbin/libvirt-usb-reattach molecule-dongle
       environment:
@@ -102,3 +76,25 @@
           - "'re-attaching molecule-dongle at 1/7 to testvm' in _stale.stdout"
           - "'-c qemu:///system detach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"
           - "'-c qemu:///system attach-device testvm /etc/libvirt/hostdev/molecule-dongle.xml --live' in (_stale_log.content | b64decode)"
+
+    - name: Stat installed files
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      loop:
+        - { path: /usr/local/sbin/libvirt-usb-reattach, mode: "0755" }
+        - { path: /etc/systemd/system/libvirt-usb-reattach@.service, mode: "0644" }
+        - { path: /etc/libvirt-usb-reattach/molecule-dongle.conf, mode: "0644" }
+        - { path: /etc/libvirt/hostdev/molecule-dongle.xml, mode: "0644" }
+        - { path: /etc/udev/rules.d/99-libvirt-usb-reattach-molecule-dongle.rules, mode: "0644" }
+      register: _files
+
+    - name: Assert files exist, are root-owned, and have the expected mode
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.pw_name == 'root'
+          - item.stat.mode == item.item.mode
+        fail_msg: "{{ item.item.path }} missing or wrong owner/mode"
+      loop: "{{ _files.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
