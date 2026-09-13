@@ -1,0 +1,15 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply libvirt_usb_reattach with a test device
+      ansible.builtin.include_role:
+        name: danmwallace.linux.libvirt_usb_reattach
+      vars:
+        libvirt_usb_reattach_devices:
+          - name: molecule-dongle
+            domain: testvm
+            vendor_id: "10c4"
+            product_id: "ea60"
+            serial: abc123

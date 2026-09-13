@@ -1,0 +1,18 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Validate USB re-attach device definitions
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[a-z0-9][a-z0-9_-]*$')
+      - item.vendor_id is match('^[0-9a-f]{4}$')
+      - item.product_id is match('^[0-9a-f]{4}$')
+      - item.serial | length > 0
+      - item.domain | length > 0
+    fail_msg: >-
+      Invalid libvirt_usb_reattach_devices entry '{{ item.name | default('(no name)') }}':
+      name must match [a-z0-9][a-z0-9_-]*, vendor_id/product_id must be 4 lowercase hex digits,
+      serial and domain must be non-empty.
+    quiet: true
+  loop: "{{ libvirt_usb_reattach_devices }}"
+  loop_control:
+    label: "{{ item.name | default('(no name)') }}"

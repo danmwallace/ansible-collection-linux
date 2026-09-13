@@ -1,0 +1,12 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+# No udevd runs inside test containers; on real hosts udevd also re-reads
+# changed rule files on the next event, so skipping there is harmless.
+- name: Reload udev rules
+  ansible.builtin.command: udevadm control --reload
+  changed_when: true
+  when: ansible_facts['virtualization_type'] | default('') not in ['container', 'podman', 'docker']
