@@ -2,11 +2,72 @@
 # Managed by Ansible - danmwallace.linux.restic_backup
 set -euo pipefail
 
-exec 9>/run/restic-backup.lock
-flock -n 9 || { echo "restic-backup: another run holds the lock" >&2; exit 1; }
-
 dumps=/var/lib/restic-backup/dumps
 log() { printf 'restic-backup: %s\n' "$*"; }
+
+# Everything in this block runs once, in the outer process. A re-exec inside a
+# private mount namespace (btrfs snapshots) sets RESTIC_BACKUP_IN_NAMESPACE and
+# inherits the lock instead of taking it again.
+if [ -z "${RESTIC_BACKUP_IN_NAMESPACE:-}" ]; then
+  exec 9>/run/restic-backup.lock
+  flock -n 9 || { echo "restic-backup: another run holds the lock" >&2; exit 1; }
+{% if restic_backup_btrfs_snapshot_subvolumes | length > 0 %}
+
+  delete_snapshots() {
+{% for subvolume in restic_backup_btrfs_snapshot_subvolumes %}
+    if [ -e {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} ]; then
+      btrfs subvolume delete {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} >/dev/null
+    fi
+{% endfor %}
+  }
+  # Removes a snapshot left behind by a killed run. Runs before the reachability
+  # probe below so a stale snapshot doesn't sit around while the laptop is away.
+  delete_snapshots
+{% endif %}
+{% if restic_backup_skip_when_unreachable %}
+
+  # The forced sftp-server on the NAS rejects shell commands, so probe with sftp itself.
+  # No Kuma ping: the push monitor alerts if the NAS stays unreachable too long.
+  # Retried a few times: right after resume from suspend, Wi-Fi may not have
+  # reconnected yet, and without a retry the run would skip until the next tick.
+  _restic_backup_nas_reachable=0
+  for _restic_backup_probe_attempt in 1 2 3 4; do
+    if sftp -b /dev/null -o ConnectTimeout=10 restic-backup-nas >/dev/null 2>&1; then
+      _restic_backup_nas_reachable=1
+      break
+    fi
+    [ "$_restic_backup_probe_attempt" -eq 4 ] || sleep 15
+  done
+  if [ "$_restic_backup_nas_reachable" -eq 0 ]; then
+    log "NAS unreachable, skipping this run"
+    exit 0
+  fi
+{% endif %}
+{% if restic_backup_btrfs_snapshot_subvolumes | length > 0 %}
+
+  # This run's own snapshot is removed on any exit from here on.
+  trap delete_snapshots EXIT
+  trap 'exit 143' TERM INT
+{% for subvolume in restic_backup_btrfs_snapshot_subvolumes %}
+  log "snapshotting {{ subvolume }}"
+  btrfs subvolume snapshot -r {{ subvolume | quote }} {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} >/dev/null
+{% endfor %}
+  # Re-run this script where each snapshot is mounted over its subvolume, so restic
+  # reads frozen data but records the original paths.
+  RESTIC_BACKUP_IN_NAMESPACE=1 unshare --mount --propagation private "$(readlink -f "$0")"
+  exit 0
+{% endif %}
+fi
+{% if restic_backup_btrfs_snapshot_subvolumes | length > 0 %}
+
+# Binding snapshots over the live subvolumes only makes sense inside the private
+# mount namespace the unshare re-exec above created — refuse otherwise (e.g. this
+# script invoked directly with RESTIC_BACKUP_IN_NAMESPACE set by hand).
+[ "$(readlink /proc/self/ns/mnt)" != "$(readlink /proc/1/ns/mnt)" ] || { log "refusing to bind snapshots outside a private mount namespace"; exit 1; }
+{% for subvolume in restic_backup_btrfs_snapshot_subvolumes %}
+mount --bind {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} {{ subvolume | quote }}
+{% endfor %}
+{% endif %}
 
 log "clearing stale locks"
 restic unlock
@@ -49,12 +110,15 @@ restic backup --one-file-system --tag nightly \
   "$dumps"
 
 log "applying retention"
-restic forget --keep-daily {{ restic_backup_keep_daily }} --keep-weekly {{ restic_backup_keep_weekly }} --keep-monthly {{ restic_backup_keep_monthly }}
+restic forget {% if (restic_backup_keep_hourly | int) > 0 %}--keep-hourly {{ restic_backup_keep_hourly | int }} {% endif %}--keep-daily {{ restic_backup_keep_daily }} --keep-weekly {{ restic_backup_keep_weekly }} --keep-monthly {{ restic_backup_keep_monthly }}
 
-if [ "$(date +%u)" = "{{ restic_backup_prune_weekday }}" ]; then
+# Hosts that run more than once a day must still prune only once on the prune weekday.
+prune_stamp=/var/lib/restic-backup/last-prune
+if [ "$(date +%u)" = "{{ restic_backup_prune_weekday }}" ] && [ "$(cat "$prune_stamp" 2>/dev/null || true)" != "$(date +%F)" ]; then
   log "weekly prune and integrity check"
   restic prune
   restic check --read-data-subset={{ restic_backup_check_subset }}
+  date +%F > "$prune_stamp"
 fi
 
 if [ -n "${RESTIC_BACKUP_KUMA_PUSH_URL:-}" ]; then

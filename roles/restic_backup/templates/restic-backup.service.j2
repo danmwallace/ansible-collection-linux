@@ -3,8 +3,14 @@
 Description=Restic backup of application data
 Wants=network-online.target
 After=network-online.target
+{% if restic_backup_require_ac_power %}
+ConditionACPower=true
+{% endif %}
 
 [Service]
+# Do not add ProtectHome=, ProtectSystem=strict, ReadOnlyPaths=/home or PrivateMounts=:
+# btrfs snapshots are created inside the backed-up subvolume and bind-mounted from
+# the host view.
 Type=oneshot
 EnvironmentFile=/etc/restic-backup/restic-backup.env
 ExecStart=/usr/local/libexec/restic-backup/run

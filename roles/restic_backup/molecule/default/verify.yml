@@ -57,6 +57,8 @@
           - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_lit[1].db' in _ls.stdout_lines"
           - "'/srv/app/skip/skipped.txt' not in _ls.stdout_lines"
           - "'/srv/app/data/state.db' not in _ls.stdout_lines"
+          - "'/srv/app/after-snapshot.txt' not in _ls.stdout_lines"
+          - "_ls.stdout_lines | select('search', 'restic-backup-snapshot') | list | length == 0"
 
     - name: Restore one file into a scratch directory
       ansible.builtin.shell:
@@ -94,3 +96,99 @@
     - name: Assert two snapshots exist
       ansible.builtin.assert:
         that: _count.stdout | int == 2
+
+    - name: Read the rendered service unit and script
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - /etc/systemd/system/restic-backup.service
+        - /usr/local/libexec/restic-backup/run
+      register: _rendered
+
+    - name: Assert the AC-power condition and hourly retention are rendered
+      ansible.builtin.assert:
+        that:
+          - "'ConditionACPower=true' in (_rendered.results[0].content | b64decode)"
+          - "'--keep-hourly 24' in (_rendered.results[1].content | b64decode)"
+
+    - name: Count prune runs in the journal
+      ansible.builtin.shell:
+        cmd: set -o pipefail && journalctl -u restic-backup.service --no-pager | grep -c 'weekly prune and integrity check'
+        executable: /bin/bash
+      register: _prunes
+      changed_when: false
+      failed_when: false
+
+    - name: Read the prune stamp
+      ansible.builtin.slurp:
+        src: /var/lib/restic-backup/last-prune
+      register: _stamp
+      failed_when: false
+
+    - name: Read today's date on the instance
+      ansible.builtin.command: date +%F
+      register: _today
+      changed_when: false
+
+    # Can fail if this run straddles midnight on the instance clock: the prune
+    # stamp is written against the date at prune time, `_today` is read afterwards.
+    # Re-run if this assertion fails around midnight.
+    - name: Assert prune ran exactly once across two runs on the same day
+      ansible.builtin.assert:
+        that:
+          - _prunes.stdout | int == 1
+          - (_stamp.content | default('') | b64decode | trim) == _today.stdout
+
+    - name: Stop sshd so the NAS is unreachable
+      ansible.builtin.systemd:
+        name: sshd
+        state: stopped
+
+    - name: Run the backup service while the NAS is unreachable
+      ansible.builtin.systemd:
+        name: restic-backup.service
+        state: started
+
+    - name: Read the service result and recent log  # noqa command-instead-of-module
+      ansible.builtin.shell:
+        cmd: systemctl show -p Result --value restic-backup.service; journalctl -u restic-backup.service --no-pager -n 20
+        executable: /bin/bash
+      register: _skipped
+      changed_when: false
+
+    - name: Start sshd again
+      ansible.builtin.systemd:
+        name: sshd
+        state: started
+
+    - name: Count snapshots after the skipped run
+      ansible.builtin.shell:
+        cmd: "{{ restic_env }} restic snapshots --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'"
+        executable: /bin/bash
+      register: _count_after_skip
+      changed_when: false
+
+    - name: Assert the unreachable run succeeded without a new snapshot
+      ansible.builtin.assert:
+        that:
+          - _skipped.stdout_lines[0] == 'success'
+          - "'NAS unreachable, skipping this run' in _skipped.stdout"
+          - _count_after_skip.stdout | int == 2
+
+    - name: Stat the snapshot directory after the runs
+      ansible.builtin.stat:
+        path: /srv/app/.restic-backup-snapshot
+      register: _snapdir
+
+    - name: Assert the snapshot was removed
+      ansible.builtin.assert:
+        that: not _snapdir.stat.exists
+
+    - name: Read the exclude file
+      ansible.builtin.slurp:
+        src: /etc/restic-backup/excludes.txt
+      register: _excludes
+
+    - name: Assert the snapshot directory is excluded
+      ansible.builtin.assert:
+        that: "'/srv/app/.restic-backup-snapshot' in (_excludes.content | b64decode).splitlines()"

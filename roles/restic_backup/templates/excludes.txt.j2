@@ -2,3 +2,6 @@
 {% for pattern in restic_backup_excludes %}
 {{ pattern }}
 {% endfor %}
+{% for subvolume in restic_backup_btrfs_snapshot_subvolumes %}
+{{ subvolume }}/.restic-backup-snapshot
+{% endfor %}

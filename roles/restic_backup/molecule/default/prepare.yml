@@ -94,3 +94,41 @@
           sqlite3 "/srv/app/data/lit[1].db" "create table if not exists t(v text); insert into t values('/srv/app/data/lit[1].db');"
         executable: /bin/bash
         creates: "/srv/app/data/lit[1].db"
+
+    - name: Ensure the drop-in directory for the restic backup service exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/restic-backup.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Reset ConditionACPower so the test doesn't depend on the Podman host's power state
+      # Podman containers see the host's /sys/class/power_supply, so on a laptop
+      # running on battery ConditionACPower=true (rendered by converge, asserted by
+      # verify) would skip the service here too and fail verify confusingly. The
+      # empty assignment resets the condition list rather than negating it.
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/restic-backup.service.d/10-molecule.conf
+        mode: "0644"
+        content: |
+          [Unit]
+          ConditionACPower=
+
+    - name: Install a fake btrfs that snapshots by copying
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/btrfs
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # molecule stand-in for "btrfs subvolume snapshot -r SRC DST" and "btrfs subvolume delete PATH"
+          set -e
+          if [ "$1 $2" = "subvolume snapshot" ]; then
+            mkdir -p "$5"
+            rsync -a --exclude .restic-backup-snapshot "$4/" "$5/"
+            # Written to the live tree only: a snapshot-based backup must not contain it.
+            date > "$4/after-snapshot.txt"
+          elif [ "$1 $2" = "subvolume delete" ]; then
+            rm -rf "$3"
+          else
+            echo "fake btrfs: unsupported: $*" >&2
+            exit 2
+          fi
