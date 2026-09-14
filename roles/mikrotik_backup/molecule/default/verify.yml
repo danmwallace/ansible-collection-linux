@@ -55,10 +55,27 @@
       ansible.builtin.assert:
         that: mikrotik_backup_t_timer.stdout == 'enabled'
 
-    - name: Read today's date
+    - name: Check the default timezone-suffixed schedule parses
+      ansible.builtin.command: systemd-analyze calendar "*-*-* 01:15:00 America/New_York"
+      changed_when: false
+
+    - name: Read today's date in the device timezone
       ansible.builtin.command: date +%Y%m%d
+      environment:
+        TZ: Etc/GMT-14
       register: mikrotik_backup_t_today
       changed_when: false
+
+    - name: Read today's date in the timezone the script will run under
+      ansible.builtin.command: date +%Y%m%d
+      environment:
+        TZ: Etc/GMT+12
+      register: mikrotik_backup_t_host_today
+      changed_when: false
+
+    - name: Assert the two zones disagree, so a host-date fallback cannot pass
+      ansible.builtin.assert:
+        that: mikrotik_backup_t_today.stdout != mikrotik_backup_t_host_today.stdout
 
     - name: Plant stale local copies older than the retention window
       ansible.builtin.shell:
@@ -68,6 +85,8 @@
 
     - name: Run the pull while sw has an empty .backup and no .rsc
       ansible.builtin.command: /usr/local/libexec/mikrotik-backup/run
+      environment:
+        TZ: Etc/GMT+12
       register: mikrotik_backup_t_partial_run
       changed_when: false
       failed_when: mikrotik_backup_t_partial_run.rc == 0
