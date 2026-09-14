@@ -2,11 +2,25 @@
 # Managed by Ansible - danmwallace.linux.restic_backup
 set -euo pipefail
 
-exec 9>/run/restic-backup.lock
-flock -n 9 || { echo "restic-backup: another run holds the lock" >&2; exit 1; }
-
 dumps=/var/lib/restic-backup/dumps
 log() { printf 'restic-backup: %s\n' "$*"; }
+
+# Everything in this block runs once, in the outer process. A re-exec inside a
+# private mount namespace (btrfs snapshots) sets RESTIC_BACKUP_IN_NAMESPACE and
+# inherits the lock instead of taking it again.
+if [ -z "${RESTIC_BACKUP_IN_NAMESPACE:-}" ]; then
+  exec 9>/run/restic-backup.lock
+  flock -n 9 || { echo "restic-backup: another run holds the lock" >&2; exit 1; }
+{% if restic_backup_skip_when_unreachable %}
+
+  # The forced sftp-server on the NAS rejects shell commands, so probe with sftp itself.
+  # No Kuma ping: the push monitor alerts if the NAS stays unreachable too long.
+  if ! sftp -b /dev/null -o ConnectTimeout=10 restic-backup-nas >/dev/null 2>&1; then
+    log "NAS unreachable, skipping this run"
+    exit 0
+  fi
+{% endif %}
+fi
 
 log "clearing stale locks"
 restic unlock

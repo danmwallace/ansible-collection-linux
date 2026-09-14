@@ -12,6 +12,8 @@ restic_backup_nas_user: "restic-{{ inventory_hostname }}"
 restic_backup_nas_base_path: /mnt/ssd-mirror/backups/restic
 restic_backup_repository: "sftp:restic-backup-nas:{{ restic_backup_nas_base_path }}/{{ inventory_hostname }}"
 restic_backup_ssh_key_path: /etc/restic-backup/id_ed25519
+# Exit 0 without a Kuma ping when the NAS cannot be reached (roaming hosts)
+restic_backup_skip_when_unreachable: false
 
 # What to back up
 restic_backup_paths: []

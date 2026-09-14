@@ -133,3 +133,39 @@
         that:
           - _prunes.stdout | int == 1
           - (_stamp.content | default('') | b64decode | trim) == _today.stdout
+
+    - name: Stop sshd so the NAS is unreachable
+      ansible.builtin.systemd:
+        name: sshd
+        state: stopped
+
+    - name: Run the backup service while the NAS is unreachable
+      ansible.builtin.systemd:
+        name: restic-backup.service
+        state: started
+
+    - name: Read the service result and recent log  # noqa command-instead-of-module
+      ansible.builtin.shell:
+        cmd: systemctl show -p Result --value restic-backup.service; journalctl -u restic-backup.service --no-pager -n 20
+        executable: /bin/bash
+      register: _skipped
+      changed_when: false
+
+    - name: Start sshd again
+      ansible.builtin.systemd:
+        name: sshd
+        state: started
+
+    - name: Count snapshots after the skipped run
+      ansible.builtin.shell:
+        cmd: "{{ restic_env }} restic snapshots --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'"
+        executable: /bin/bash
+      register: _count_after_skip
+      changed_when: false
+
+    - name: Assert the unreachable run succeeded without a new snapshot
+      ansible.builtin.assert:
+        that:
+          - _skipped.stdout_lines[0] == 'success'
+          - "'NAS unreachable, skipping this run' in _skipped.stdout"
+          - _count_after_skip.stdout | int == 2

@@ -40,3 +40,4 @@
         # Sunday=0; %u wants Sunday=7), so the prune branch runs during verify
         # regardless of the controller's timezone.
         restic_backup_prune_weekday: "{{ (ansible_date_time.weekday_number | int) if (ansible_date_time.weekday_number | int) > 0 else 7 }}"
+        restic_backup_skip_when_unreachable: true

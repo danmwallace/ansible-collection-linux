@@ -40,6 +40,12 @@ argument_specs:
         description: Private key path for the dedicated SSH identity. The public key is written next to it with a .pub suffix.
         type: str
         default: /etc/restic-backup/id_ed25519
+      restic_backup_skip_when_unreachable:
+        description:
+          - Probe the NAS over SFTP first; if it is unreachable, log and exit 0 without a Kuma ping.
+          - For roaming hosts. The push monitor still alerts when the NAS stays unreachable too long.
+        type: bool
+        default: false
       restic_backup_paths:
         description: Directories to back up. The dump directory /var/lib/restic-backup/dumps is always added.
         type: list
