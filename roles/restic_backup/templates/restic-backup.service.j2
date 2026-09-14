@@ -3,6 +3,9 @@
 Description=Restic backup of application data
 Wants=network-online.target
 After=network-online.target
+{% if restic_backup_require_ac_power %}
+ConditionACPower=true
+{% endif %}
 
 [Service]
 Type=oneshot

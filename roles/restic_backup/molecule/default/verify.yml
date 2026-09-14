@@ -94,3 +94,37 @@
     - name: Assert two snapshots exist
       ansible.builtin.assert:
         that: _count.stdout | int == 2
+
+    - name: Read the rendered service unit and script
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - /etc/systemd/system/restic-backup.service
+        - /usr/local/libexec/restic-backup/run
+      register: _rendered
+
+    - name: Assert the AC-power condition and hourly retention are rendered
+      ansible.builtin.assert:
+        that:
+          - "'ConditionACPower=true' in (_rendered.results[0].content | b64decode)"
+          - "'--keep-hourly 24' in (_rendered.results[1].content | b64decode)"
+
+    - name: Count prune runs in the journal
+      ansible.builtin.shell:
+        cmd: set -o pipefail && journalctl -u restic-backup.service --no-pager | grep -c 'weekly prune and integrity check'
+        executable: /bin/bash
+      register: _prunes
+      changed_when: false
+      failed_when: false
+
+    - name: Read the prune stamp
+      ansible.builtin.slurp:
+        src: /var/lib/restic-backup/last-prune
+      register: _stamp
+      failed_when: false
+
+    - name: Assert prune ran exactly once across two runs on the same day
+      ansible.builtin.assert:
+        that:
+          - _prunes.stdout | int == 1
+          - (_stamp.content | default('') | b64decode | trim) == lookup('ansible.builtin.pipe', 'date +%F')

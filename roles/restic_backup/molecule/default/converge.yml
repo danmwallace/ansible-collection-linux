@@ -34,3 +34,7 @@
           - /srv/app/data/profiles/*/state.db
           - /srv/app/nothing/*.db
           - "/srv/app/data/lit[1].db"
+        restic_backup_keep_hourly: 24
+        restic_backup_require_ac_power: true
+        # Today's ISO weekday, so the prune branch runs during verify.
+        restic_backup_prune_weekday: "{{ lookup('ansible.builtin.pipe', 'date +%u') | int }}"

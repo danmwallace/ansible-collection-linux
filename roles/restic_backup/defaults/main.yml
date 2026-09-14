@@ -24,6 +24,8 @@ restic_backup_mariadb_dumps: []
 restic_backup_sqlite_dbs: []
 
 # Retention and maintenance
+# Hourly snapshots kept by restic forget; 0 omits --keep-hourly
+restic_backup_keep_hourly: 0
 restic_backup_keep_daily: 7
 restic_backup_keep_weekly: 4
 restic_backup_keep_monthly: 6
@@ -37,3 +39,6 @@ restic_backup_randomized_delay: 30m
 
 # Uptime Kuma push URL without query string, e.g. https://uptime.example/api/push/<token>
 restic_backup_kuma_push_url: ""
+
+# Add ConditionACPower=true so the service is skipped on battery (laptops)
+restic_backup_require_ac_power: false

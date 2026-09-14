@@ -81,6 +81,10 @@ argument_specs:
         type: list
         elements: str
         default: []
+      restic_backup_keep_hourly:
+        description: Hourly snapshots kept by restic forget. 0 omits --keep-hourly.
+        type: int
+        default: 0
       restic_backup_keep_daily:
         description: Daily snapshots kept by restic forget.
         type: int
@@ -109,6 +113,10 @@ argument_specs:
         description: systemd RandomizedDelaySec for the timer.
         type: str
         default: 30m
+      restic_backup_require_ac_power:
+        description: Add ConditionACPower=true to the service so runs are skipped on battery. For laptops.
+        type: bool
+        default: false
       restic_backup_kuma_push_url:
         description: Uptime Kuma push URL without a query string. Pinged only after a fully successful run. Empty disables it. Supply from vault.
         type: str

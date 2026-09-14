@@ -49,12 +49,15 @@ restic backup --one-file-system --tag nightly \
   "$dumps"
 
 log "applying retention"
-restic forget --keep-daily {{ restic_backup_keep_daily }} --keep-weekly {{ restic_backup_keep_weekly }} --keep-monthly {{ restic_backup_keep_monthly }}
+restic forget {% if restic_backup_keep_hourly > 0 %}--keep-hourly {{ restic_backup_keep_hourly }} {% endif %}--keep-daily {{ restic_backup_keep_daily }} --keep-weekly {{ restic_backup_keep_weekly }} --keep-monthly {{ restic_backup_keep_monthly }}
 
-if [ "$(date +%u)" = "{{ restic_backup_prune_weekday }}" ]; then
+# Hosts that run more than once a day must still prune only once on the prune weekday.
+prune_stamp=/var/lib/restic-backup/last-prune
+if [ "$(date +%u)" = "{{ restic_backup_prune_weekday }}" ] && [ "$(cat "$prune_stamp" 2>/dev/null || true)" != "$(date +%F)" ]; then
   log "weekly prune and integrity check"
   restic prune
   restic check --read-data-subset={{ restic_backup_check_subset }}
+  date +%F > "$prune_stamp"
 fi
 
 if [ -n "${RESTIC_BACKUP_KUMA_PUSH_URL:-}" ]; then
