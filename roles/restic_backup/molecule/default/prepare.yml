@@ -95,6 +95,24 @@
         executable: /bin/bash
         creates: "/srv/app/data/lit[1].db"
 
+    - name: Ensure the drop-in directory for the restic backup service exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/restic-backup.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Reset ConditionACPower so the test doesn't depend on the Podman host's power state
+      # Podman containers see the host's /sys/class/power_supply, so on a laptop
+      # running on battery ConditionACPower=true (rendered by converge, asserted by
+      # verify) would skip the service here too and fail verify confusingly. The
+      # empty assignment resets the condition list rather than negating it.
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/restic-backup.service.d/10-molecule.conf
+        mode: "0644"
+        content: |
+          [Unit]
+          ConditionACPower=
+
     - name: Install a fake btrfs that snapshots by copying
       ansible.builtin.copy:
         dest: /usr/local/sbin/btrfs

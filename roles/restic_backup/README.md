@@ -44,7 +44,7 @@ mains power or reachable to the NAS — see
 | `restic_backup_nas_base_path` | str | no | `/mnt/ssd-mirror/backups/restic` | Remote directory containing one repository directory per host. |
 | `restic_backup_repository` | str | no | `sftp:restic-backup-nas:{{ restic_backup_nas_base_path }}/{{ inventory_hostname }}` | restic repository URL. The host alias `restic-backup-nas` is defined by this role. |
 | `restic_backup_ssh_key_path` | str | no | `/etc/restic-backup/id_ed25519` | Private key path for the dedicated SSH identity. The public key is written next to it with a `.pub` suffix. |
-| `restic_backup_skip_when_unreachable` | bool | no | `false` | Probe the NAS over SFTP first; if it is unreachable, log and exit 0 without a Kuma ping. For roaming hosts — see [Laptops / roaming hosts](#laptops--roaming-hosts). |
+| `restic_backup_skip_when_unreachable` | bool | no | `false` | Probe the NAS over SFTP first (4 attempts, 15s apart); if still unreachable, log and exit 0 without a Kuma ping. For roaming hosts — see [Laptops / roaming hosts](#laptops--roaming-hosts). |
 | `restic_backup_paths` | list of str | no | `[]` | Directories to back up. `/var/lib/restic-backup/dumps` is always added. |
 | `restic_backup_excludes` | list of str | no | `[]` | restic exclude patterns, one per entry. |
 | `restic_backup_postgres_dumps` | list of dict | no | `[]` | Postgres containers to dump with `pg_dumpall` before each backup. Each entry: `container` (Podman container name, required), `user` (Postgres superuser inside the container, required). |
@@ -131,44 +131,52 @@ timer):
 
 1. Takes an exclusive lock (`flock`) so overlapping runs bail out instead of
    racing.
-2. If `restic_backup_skip_when_unreachable` is set, probes the NAS with
-   `sftp -b /dev/null -o ConnectTimeout=10 restic-backup-nas`; on failure it
-   logs "NAS unreachable, skipping this run" and exits 0 without pinging
-   Kuma — see [Laptops / roaming hosts](#laptops--roaming-hosts).
-3. If `restic_backup_btrfs_snapshot_subvolumes` is non-empty: deletes any
-   snapshot left behind by a killed prior run, takes a fresh read-only
-   snapshot of each subvolume at `<subvolume>/.restic-backup-snapshot`, then
-   re-executes itself inside a private mount namespace
-   (`RESTIC_BACKUP_IN_NAMESPACE=1 unshare --mount --propagation private
-   "$0"`) which bind-mounts each snapshot back over its own subvolume before
-   the run continues — restic reads the frozen snapshot but records the
-   original path. An `EXIT` trap deletes the snapshots when the namespaced
-   run ends (including on `TERM`/`INT`). See
+2. If `restic_backup_btrfs_snapshot_subvolumes` is non-empty, deletes any
+   snapshot left behind by a killed prior run — before the reachability
+   probe below, so a stale snapshot doesn't sit around for the whole time
+   the laptop is away from the NAS.
+3. If `restic_backup_skip_when_unreachable` is set, probes the NAS with
+   `sftp -b /dev/null -o ConnectTimeout=10 restic-backup-nas`, retrying up
+   to 4 attempts 15 seconds apart (no sleep after the last); if every
+   attempt fails it logs "NAS unreachable, skipping this run" and exits 0
+   without pinging Kuma. The retries cover a run that fires right after
+   resume from suspend, before Wi-Fi has reconnected — see
    [Laptops / roaming hosts](#laptops--roaming-hosts).
-4. Runs `restic unlock` to clear stale locks from a prior interrupted run.
-5. Recreates `/var/lib/restic-backup/dumps` (and `dumps/sqlite`) from
+4. If `restic_backup_btrfs_snapshot_subvolumes` is non-empty: takes a fresh
+   read-only snapshot of each subvolume at
+   `<subvolume>/.restic-backup-snapshot`, then re-executes itself inside a
+   private mount namespace (`RESTIC_BACKUP_IN_NAMESPACE=1 unshare --mount
+   --propagation private "$(readlink -f "$0")"`) which refuses to proceed
+   unless it is actually running inside a private mount namespace, then
+   bind-mounts each snapshot back over its own subvolume before the run
+   continues — restic reads the frozen snapshot but records the original
+   path. An `EXIT` trap deletes the snapshots when the namespaced run ends
+   (including on `TERM`/`INT`). See
+   [Laptops / roaming hosts](#laptops--roaming-hosts).
+5. Runs `restic unlock` to clear stale locks from a prior interrupted run.
+6. Recreates `/var/lib/restic-backup/dumps` (and `dumps/sqlite`) from
    scratch.
-6. Dumps each configured Postgres container with `pg_dumpall` and each
+7. Dumps each configured Postgres container with `pg_dumpall` and each
    MariaDB container with `mariadb-dump`, gzipped to
    `dumps/<container>.sql.gz`.
-7. Backs up each configured SQLite database with `sqlite3 ... .backup`,
+8. Backs up each configured SQLite database with `sqlite3 ... .backup`,
    writing to `dumps/sqlite/<name>`, where `<name>` is the database's
    absolute path with the leading `/` stripped and remaining `/` replaced
    with `_` (e.g. `/opt/podman/app/data.db` becomes
    `opt_podman_app_data.db`).
-8. Runs `restic backup --one-file-system --tag nightly` over
+9. Runs `restic backup --one-file-system --tag nightly` over
    `restic_backup_paths` plus the dump directory, excluding
    `/etc/restic-backup/excludes.txt`.
-9. Runs `restic forget` with the configured retention: `--keep-hourly` is
-   included only when `restic_backup_keep_hourly` is greater than `0`, plus
-   the daily/weekly/monthly counts.
-10. On `restic_backup_prune_weekday` (ISO weekday, default `7` = Sunday),
+10. Runs `restic forget` with the configured retention: `--keep-hourly` is
+    included only when `restic_backup_keep_hourly` is greater than `0`, plus
+    the daily/weekly/monthly counts.
+11. On `restic_backup_prune_weekday` (ISO weekday, default `7` = Sunday),
     and at most once per calendar day — tracked in
     `/var/lib/restic-backup/last-prune` — also runs `restic prune` and
     `restic check --read-data-subset=<restic_backup_check_subset>`. This
     keeps a host that runs the timer more than once a day (e.g. every 4
     hours) from pruning and checking on every one of that day's runs.
-11. If `RESTIC_BACKUP_KUMA_PUSH_URL` is set, pings it (appending
+12. If `RESTIC_BACKUP_KUMA_PUSH_URL` is set, pings it (appending
     `?status=up&msg=OK`) — only after every prior step has succeeded, since
     the script runs under `set -euo pipefail`.
 
@@ -258,10 +266,17 @@ sudo bash -c 'set -a; . /etc/restic-backup/restic-backup.env; set +a; restic dum
 on mains power and reachable to the NAS — a laptop, not a server. Together:
 
 - `restic_backup_require_ac_power` adds `ConditionACPower=true` to the
-  service, so systemd skips the run entirely on battery (no log line, no
-  failed run — systemd just doesn't start it).
+  service, so systemd skips the run entirely on battery — not a failed run,
+  but not silent either: systemd logs "…was skipped because of an unmet
+  condition check (ConditionACPower=true)" to the journal instead of
+  actually starting the service. A manual `systemctl start
+  restic-backup.service` while on battery will appear to do nothing beyond
+  that one journal line — no `ExecStart`, no output, exit status still
+  reported as success.
 - `restic_backup_skip_when_unreachable` probes the NAS over SFTP before
-  doing anything else; if that fails, the run exits 0 with no Kuma ping.
+  doing anything else, retrying a few times to ride out a brief resume-from-
+  suspend gap before Wi-Fi reconnects; if every attempt still fails, the run
+  exits 0 with no Kuma ping.
   **The probe can't tell a NAS that's genuinely down from a
   misconfiguration** — a stale `restic_backup_nas_host_key`, or an SSH
   public key the NAS hasn't authorised — since both make the SFTP probe

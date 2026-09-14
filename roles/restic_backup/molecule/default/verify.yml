@@ -130,6 +130,9 @@
       register: _today
       changed_when: false
 
+    # Can fail if this run straddles midnight on the instance clock: the prune
+    # stamp is written against the date at prune time, `_today` is read afterwards.
+    # Re-run if this assertion fails around midnight.
     - name: Assert prune ran exactly once across two runs on the same day
       ansible.builtin.assert:
         that:
