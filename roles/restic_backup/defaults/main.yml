@@ -24,6 +24,9 @@ restic_backup_postgres_dumps: []
 restic_backup_mariadb_dumps: []
 # Plain paths (must exist) or shell globs (may match nothing)
 restic_backup_sqlite_dbs: []
+# btrfs subvolumes to snapshot read-only before each run; the backup reads the
+# snapshots mounted over the original paths (needs btrfs-progs)
+restic_backup_btrfs_snapshot_subvolumes: []
 
 # Retention and maintenance
 # Hourly snapshots kept by restic forget; 0 omits --keep-hourly

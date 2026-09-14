@@ -20,7 +20,35 @@ if [ -z "${RESTIC_BACKUP_IN_NAMESPACE:-}" ]; then
     exit 0
   fi
 {% endif %}
+{% if restic_backup_btrfs_snapshot_subvolumes | length > 0 %}
+
+  delete_snapshots() {
+{% for subvolume in restic_backup_btrfs_snapshot_subvolumes %}
+    if [ -e {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} ]; then
+      btrfs subvolume delete {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} >/dev/null
+    fi
+{% endfor %}
+  }
+  # Removes a snapshot left behind by a killed run, then this run's on any exit.
+  delete_snapshots
+  trap delete_snapshots EXIT
+  trap 'exit 143' TERM INT
+{% for subvolume in restic_backup_btrfs_snapshot_subvolumes %}
+  log "snapshotting {{ subvolume }}"
+  btrfs subvolume snapshot -r {{ subvolume | quote }} {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} >/dev/null
+{% endfor %}
+  # Re-run this script where each snapshot is mounted over its subvolume, so restic
+  # reads frozen data but records the original paths.
+  RESTIC_BACKUP_IN_NAMESPACE=1 unshare --mount --propagation private "$0"
+  exit 0
+{% endif %}
 fi
+{% if restic_backup_btrfs_snapshot_subvolumes | length > 0 %}
+
+{% for subvolume in restic_backup_btrfs_snapshot_subvolumes %}
+mount --bind {{ (subvolume ~ '/.restic-backup-snapshot') | quote }} {{ subvolume | quote }}
+{% endfor %}
+{% endif %}
 
 log "clearing stale locks"
 restic unlock

@@ -57,6 +57,8 @@
           - "'/var/lib/restic-backup/dumps/sqlite/srv_app_data_lit[1].db' in _ls.stdout_lines"
           - "'/srv/app/skip/skipped.txt' not in _ls.stdout_lines"
           - "'/srv/app/data/state.db' not in _ls.stdout_lines"
+          - "'/srv/app/after-snapshot.txt' not in _ls.stdout_lines"
+          - "_ls.stdout_lines | select('search', 'restic-backup-snapshot') | list | length == 0"
 
     - name: Restore one file into a scratch directory
       ansible.builtin.shell:
@@ -169,3 +171,21 @@
           - _skipped.stdout_lines[0] == 'success'
           - "'NAS unreachable, skipping this run' in _skipped.stdout"
           - _count_after_skip.stdout | int == 2
+
+    - name: Stat the snapshot directory after the runs
+      ansible.builtin.stat:
+        path: /srv/app/.restic-backup-snapshot
+      register: _snapdir
+
+    - name: Assert the snapshot was removed
+      ansible.builtin.assert:
+        that: not _snapdir.stat.exists
+
+    - name: Read the exclude file
+      ansible.builtin.slurp:
+        src: /etc/restic-backup/excludes.txt
+      register: _excludes
+
+    - name: Assert the snapshot directory is excluded
+      ansible.builtin.assert:
+        that: "'/srv/app/.restic-backup-snapshot' in (_excludes.content | b64decode).splitlines()"

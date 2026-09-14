@@ -87,6 +87,14 @@ argument_specs:
         type: list
         elements: str
         default: []
+      restic_backup_btrfs_snapshot_subvolumes:
+        description:
+          - btrfs subvolume mount points to snapshot read-only as <subvolume>/.restic-backup-snapshot before each run.
+          - The backup runs in a private mount namespace with each snapshot bind-mounted over its subvolume, so paths in the repository stay the original ones.
+          - The snapshot is deleted when the run ends; a leftover one is deleted at the start of the next run.
+        type: list
+        elements: str
+        default: []
       restic_backup_keep_hourly:
         description: Hourly snapshots kept by restic forget. 0 omits --keep-hourly.
         type: int

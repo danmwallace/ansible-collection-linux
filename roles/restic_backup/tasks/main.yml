@@ -23,6 +23,12 @@
     state: present
   when: restic_backup_sqlite_dbs | length > 0
 
+- name: Ensure btrfs-progs is installed when btrfs snapshots are used
+  ansible.builtin.package:
+    name: btrfs-progs
+    state: present
+  when: restic_backup_btrfs_snapshot_subvolumes | length > 0
+
 - name: Ensure restic backup directories exist
   ansible.builtin.file:
     path: "{{ item }}"
