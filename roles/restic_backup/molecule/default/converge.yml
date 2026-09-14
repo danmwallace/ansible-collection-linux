@@ -36,5 +36,7 @@
           - "/srv/app/data/lit[1].db"
         restic_backup_keep_hourly: 24
         restic_backup_require_ac_power: true
-        # Today's ISO weekday, so the prune branch runs during verify.
-        restic_backup_prune_weekday: "{{ lookup('ansible.builtin.pipe', 'date +%u') | int }}"
+        # The instance's own ISO weekday (ansible_date_time.weekday_number is %w,
+        # Sunday=0; %u wants Sunday=7), so the prune branch runs during verify
+        # regardless of the controller's timezone.
+        restic_backup_prune_weekday: "{{ (ansible_date_time.weekday_number | int) if (ansible_date_time.weekday_number | int) > 0 else 7 }}"

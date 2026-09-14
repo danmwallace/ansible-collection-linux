@@ -123,8 +123,13 @@
       register: _stamp
       failed_when: false
 
+    - name: Read today's date on the instance
+      ansible.builtin.command: date +%F
+      register: _today
+      changed_when: false
+
     - name: Assert prune ran exactly once across two runs on the same day
       ansible.builtin.assert:
         that:
           - _prunes.stdout | int == 1
-          - (_stamp.content | default('') | b64decode | trim) == lookup('ansible.builtin.pipe', 'date +%F')
+          - (_stamp.content | default('') | b64decode | trim) == _today.stdout
