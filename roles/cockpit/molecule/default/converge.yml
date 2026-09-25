@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply cockpit with test values
+      ansible.builtin.include_role:
+        name: danmwallace.linux.cockpit
+      vars:
+        cockpit_hostname: cockpit.test.local

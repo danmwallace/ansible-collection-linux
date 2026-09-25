@@ -1,0 +1,174 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  vars:
+    cockpit_t_crt: /etc/cockpit/ws-certs.d/cockpit.test.local.crt
+    cockpit_t_key: /etc/cockpit/ws-certs.d/cockpit.test.local.key
+    cockpit_t_lineage: /etc/letsencrypt/live/cockpit.test.local
+  tasks:
+    - name: Stat the installed certificate, key and deploy hook
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ cockpit_t_crt }}"
+        - "{{ cockpit_t_key }}"
+        - /etc/letsencrypt/renewal-hooks/deploy/10-cockpit.sh
+      register: cockpit_t_files
+
+    - name: Assert the cert material is root-only and the hook is executable
+      ansible.builtin.assert:
+        that:
+          - cockpit_t_files.results[0].stat.exists
+          - cockpit_t_files.results[0].stat.mode == '0600'
+          - cockpit_t_files.results[0].stat.pw_name == 'root'
+          - cockpit_t_files.results[1].stat.exists
+          - cockpit_t_files.results[1].stat.mode == '0600'
+          - cockpit_t_files.results[2].stat.exists
+          - cockpit_t_files.results[2].stat.mode == '0755'
+
+    - name: Stat the legacy post hook
+      ansible.builtin.stat:
+        path: /etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh
+      register: cockpit_t_legacy
+
+    - name: Assert the legacy post hook was removed
+      ansible.builtin.assert:
+        that: not cockpit_t_legacy.stat.exists
+
+    - name: Check the Cockpit socket is enabled and active
+      ansible.builtin.shell:  # noqa command-instead-of-module
+        cmd: systemctl is-enabled cockpit.socket; systemctl is-active cockpit.socket
+        executable: /bin/bash
+      register: cockpit_t_socket
+      changed_when: false
+
+    - name: Assert the Cockpit socket is enabled and active
+      ansible.builtin.assert:
+        that:
+          - cockpit_t_socket.stdout_lines[0] == 'enabled'
+          - cockpit_t_socket.stdout_lines[1] == 'active'
+
+    - name: Generate a second certificate standing in for a renewal
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2
+          -subj /CN=renewed.test.local
+          -keyout {{ cockpit_t_lineage }}/privkey.pem
+          -out {{ cockpit_t_lineage }}/fullchain.pem
+      changed_when: true
+
+    - name: Run the deploy hook for a different lineage
+      ansible.builtin.command:
+        cmd: /etc/letsencrypt/renewal-hooks/deploy/10-cockpit.sh
+      environment:
+        RENEWED_LINEAGE: /etc/letsencrypt/live/somethingelse.test.local
+      changed_when: false
+
+    - name: Read the installed certificate after the unrelated lineage
+      ansible.builtin.command:
+        cmd: openssl x509 -in {{ cockpit_t_crt }} -noout -subject
+      register: cockpit_t_subject_before
+      changed_when: false
+
+    - name: Assert an unrelated lineage did not touch Cockpit's certificate
+      ansible.builtin.assert:
+        that: "'initial.test.local' in cockpit_t_subject_before.stdout"
+
+    - name: Check whether journald is available in the container
+      ansible.builtin.command:
+        cmd: pidof systemd
+      register: cockpit_t_has_systemd
+      changed_when: false
+      failed_when: false
+
+    - name: Read the journal for the lineage-mismatch skip message
+      ansible.builtin.command:
+        cmd: journalctl -t cockpit-cert-deploy --no-pager
+      register: cockpit_t_journal
+      changed_when: false
+      failed_when: false
+      when: cockpit_t_has_systemd.rc == 0
+
+    - name: Assert the skip message was logged for the unrelated lineage
+      ansible.builtin.assert:
+        that: >-
+          'skipping: RENEWED_LINEAGE=/etc/letsencrypt/live/somethingelse.test.local
+          != /etc/letsencrypt/live/cockpit.test.local' in cockpit_t_journal.stdout
+      when:
+        - cockpit_t_has_systemd.rc == 0
+        - cockpit_t_journal.rc == 0
+
+    - name: Run the deploy hook for this host's lineage
+      ansible.builtin.command:
+        cmd: /etc/letsencrypt/renewal-hooks/deploy/10-cockpit.sh
+      environment:
+        RENEWED_LINEAGE: "{{ cockpit_t_lineage }}"
+      changed_when: true
+
+    - name: Read the installed certificate after the renewal
+      ansible.builtin.command:
+        cmd: openssl x509 -in {{ cockpit_t_crt }} -noout -subject
+      register: cockpit_t_subject_after
+      changed_when: false
+
+    - name: Stat the installed certificate and key after the hook ran
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ cockpit_t_crt }}"
+        - "{{ cockpit_t_key }}"
+      register: cockpit_t_files_after
+
+    - name: Assert the post-hook cert material is still root-only
+      ansible.builtin.assert:
+        that:
+          - cockpit_t_files_after.results[0].stat.exists
+          - cockpit_t_files_after.results[0].stat.mode == '0600'
+          - cockpit_t_files_after.results[0].stat.pw_name == 'root'
+          - cockpit_t_files_after.results[1].stat.exists
+          - cockpit_t_files_after.results[1].stat.mode == '0600'
+          - cockpit_t_files_after.results[1].stat.pw_name == 'root'
+
+    - name: Compare the installed cert and key moduli
+      ansible.builtin.shell:  # noqa command-instead-of-module
+        cmd: >-
+          set -o pipefail &&
+          openssl x509 -noout -modulus -in {{ cockpit_t_crt }} | openssl md5
+        executable: /bin/bash
+      register: cockpit_t_crt_modulus
+      changed_when: false
+
+    - name: Compare the installed key modulus
+      ansible.builtin.shell:  # noqa command-instead-of-module
+        cmd: >-
+          set -o pipefail &&
+          openssl rsa -noout -modulus -in {{ cockpit_t_key }} | openssl md5
+        executable: /bin/bash
+      register: cockpit_t_key_modulus
+      changed_when: false
+
+    - name: Assert the installed certificate and key are a matching pair
+      ansible.builtin.assert:
+        that:
+          - cockpit_t_crt_modulus.stdout == cockpit_t_key_modulus.stdout
+
+    # cockpit-ws will not answer on 127.0.0.1:9090 inside the molecule container
+    # (openssl s_client gets an immediately-closed connection: rc=1, empty stdout,
+    # "Could not find certificate from <stdin>" — no PAM/D-Bus session environment
+    # in a minimal systemd container). The served-certificate check instead runs
+    # against the real hosts (Task 5 Step 4).
+    - name: Assert the renewed certificate was installed
+      ansible.builtin.assert:
+        that:
+          - "'renewed.test.local' in cockpit_t_subject_after.stdout"
+
+    - name: Find any leftover staging files in the cert directory
+      ansible.builtin.find:
+        paths: /etc/cockpit/ws-certs.d
+        patterns: "*.new"
+      register: cockpit_t_staging_files
+
+    - name: Assert no staging (*.new) files were left behind
+      ansible.builtin.assert:
+        that: cockpit_t_staging_files.files | length == 0

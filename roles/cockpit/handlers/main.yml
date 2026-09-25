@@ -2,6 +2,7 @@
 # handlers file for cockpit
 
 - name: Restart cockpit
-  ansible.builtin.service:
-    name: cockpit
+  ansible.builtin.systemd_service:
+    name: "{{ cockpit_service_name }}"
     state: restarted
+  become: true

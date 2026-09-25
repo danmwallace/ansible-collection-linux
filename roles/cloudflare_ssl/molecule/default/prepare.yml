@@ -1,0 +1,17 @@
+---
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Ensure a fake certificate lineage exists so issuance is skipped
+      ansible.builtin.file:
+        path: /etc/letsencrypt/live/ssl.test.local
+        state: directory
+        mode: "0755"
+
+    - name: Ensure the fake certificate file exists
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/live/ssl.test.local/cert.pem
+        content: |
+          molecule fake certificate - certbot must not run
+        mode: "0644"

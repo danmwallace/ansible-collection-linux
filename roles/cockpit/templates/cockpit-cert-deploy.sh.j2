@@ -1,0 +1,36 @@
+#!/bin/bash
+# Managed by Ansible - danmwallace.linux.cockpit
+# certbot deploy hook: certbot runs this only when a certificate was renewed, and
+# exports RENEWED_LINEAGE for the lineage it renewed.
+set -euo pipefail
+
+lineage={{ cockpit_letsencrypt_cert_path | quote }}
+crt={{ (cockpit_cert_path ~ '/' ~ cockpit_hostname ~ '.crt') | quote }}
+key={{ (cockpit_cert_path ~ '/' ~ cockpit_hostname ~ '.key') | quote }}
+
+# Clean up any staging files left by an interrupted install/mv below, whether we
+# exit early, fail partway, or finish normally (mv already moved them, so rm -f
+# is a no-op then).
+trap 'rm -f "$crt.new" "$key.new"' EXIT
+
+# Other certificates on this host must not disturb Cockpit's.
+if [ "${RENEWED_LINEAGE:-}" != "$lineage" ]; then
+  logger -t cockpit-cert-deploy "skipping: RENEWED_LINEAGE=${RENEWED_LINEAGE:-} != $lineage" || true
+  exit 0
+fi
+
+# Install to a staging path, then move both into place. install(1) truncates its
+# destination as it writes, so writing straight over the live files risks leaving
+# a mismatched cert/key pair if the second install fails partway (ENOSPC, I/O
+# error, SELinux denial). mv within the same directory is atomic; a leftover
+# *.new file is inert since Cockpit's cert filter only reads *.crt/*.cert.
+install -o {{ cockpit_cert_owner }} -g {{ cockpit_cert_group }} -m {{ cockpit_cert_mode }} \
+  "$lineage/fullchain.pem" "$crt.new"
+install -o {{ cockpit_cert_owner }} -g {{ cockpit_cert_group }} -m {{ cockpit_cert_mode }} \
+  "$lineage/privkey.pem" "$key.new"
+mv -f "$crt.new" "$crt"
+mv -f "$key.new" "$key"
+
+systemctl restart {{ cockpit_service_name | quote }}
+
+logger -t cockpit-cert-deploy "installed renewed certificate for {{ cockpit_hostname }}" || true

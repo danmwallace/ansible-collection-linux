@@ -1,0 +1,37 @@
+---
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Ensure the fake lineage directory exists
+      ansible.builtin.file:
+        path: /etc/letsencrypt/live/cockpit.test.local
+        state: directory
+        mode: "0755"
+
+    - name: Ensure the legacy renewal-hooks directories exist
+      ansible.builtin.file:
+        path: "/etc/letsencrypt/renewal-hooks/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - pre
+        - post
+        - deploy
+
+    - name: Plant a legacy post-renewal hook the role must remove
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh
+        content: |
+          #!/bin/bash
+          echo legacy
+        mode: "0755"
+
+    - name: Generate the initial self-signed certificate for the fake lineage
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2
+          -subj /CN=initial.test.local
+          -keyout /etc/letsencrypt/live/cockpit.test.local/privkey.pem
+          -out /etc/letsencrypt/live/cockpit.test.local/fullchain.pem
+        creates: /etc/letsencrypt/live/cockpit.test.local/fullchain.pem

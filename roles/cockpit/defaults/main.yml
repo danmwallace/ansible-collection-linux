@@ -4,6 +4,31 @@
 cockpit_hostname: "{{ inventory_hostname }}" # Default to inventory_hostname if none provided in playbook
 cockpit_letsencrypt_cert_path: "/etc/letsencrypt/live/{{ cockpit_hostname }}"
 cockpit_cert_path: "/etc/cockpit/ws-certs.d"
-# Source CIDR allowed to reach Cockpit (port 9090). Defaults to RFC-1918 private
-# ranges; set to your homelab CIDR (e.g. 192.168.1.0/24) for tighter scoping.
+
+# Cockpit reads its TLS material as root on Fedora; Debian ships a cockpit-ws user.
+cockpit_cert_owner: "{{ 'cockpit-ws' if ansible_facts.os_family == 'Debian' else 'root' }}"
+cockpit_cert_group: "{{ cockpit_cert_owner }}"
+cockpit_cert_mode: "0600"
+
+# cockpit.service is static on Fedora, so the socket is the unit to manage.
+cockpit_service_name: cockpit.socket
+
+# Source CIDRs allowed to reach Cockpit on port 9090 through firewalld
+# (RedHat family). Empty means the firewall is left untouched.
+cockpit_allowed_cidrs: []
+
+# firewalld ships a zone-wide "cockpit" service (all sources, port 9090) that an
+# additive rich rule cannot narrow. Disable it once cockpit_allowed_cidrs is set,
+# so only the rich rules above grant access.
+cockpit_remove_blanket_firewalld_service: true
+
+# firewalld zone the rich rules and blanket-service removal act on. Empty string
+# means "use firewalld's default zone" (ansible.posix.firewalld's own default).
+# Set this explicitly on any host whose active interfaces are bound to a
+# non-default zone, or the rules land in a zone nothing uses.
+cockpit_firewalld_zone: ""
+
+# Source CIDR allowed to reach Cockpit (port 9090) via UFW on Ubuntu. Defaults to
+# RFC-1918 private ranges; set to your homelab CIDR (e.g. 192.168.1.0/24) for
+# tighter scoping.
 cockpit_allowed_cidr: "10.0.0.0/8"
