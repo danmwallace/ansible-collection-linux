@@ -1,84 +1,93 @@
 ---
 # ###############################################################
 # Setup Cockpit with TLS
+#
+# cockpit_letsencrypt_cert_path = directory holding the Let's Encrypt lineage
+# cockpit_cert_path             = directory Cockpit reads its TLS material from
 
-# Currently the variables are a bit funny because they're prefixed with cockpit_cockpit
-# It is best practice to prefix a variable in a role with the role name, so this is just an ugly semantic consequence
-# cockpit_letsencrypt_cert_path = path that letsencrypt certs are stored
-# cockpit_cert_path = the directory cockpit uses for cert storage
-- name: "(General) Ensure Cockpit certificate directory exists"
+- name: Ensure the Cockpit certificate directory exists
   ansible.builtin.file:
     path: "{{ cockpit_cert_path }}"
     state: directory
+    owner: root
+    group: root
     mode: "0755"
   become: true
 
-- name: "(General) Copy SSL certificate to Cockpit directory"
+- name: Ensure the Cockpit certificate is installed
   ansible.builtin.copy:
     src: "{{ cockpit_letsencrypt_cert_path }}/fullchain.pem"
     dest: "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt"
     remote_src: true
-    mode: "0600"
+    owner: "{{ cockpit_cert_owner }}"
+    group: "{{ cockpit_cert_group }}"
+    mode: "{{ cockpit_cert_mode }}"
   become: true
+  notify: Restart cockpit
 
-- name: "(General) Copy SSL private key to Cockpit directory"
+- name: Ensure the Cockpit private key is installed
   ansible.builtin.copy:
     src: "{{ cockpit_letsencrypt_cert_path }}/privkey.pem"
     dest: "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.key"
     remote_src: true
-    mode: "0600"
+    owner: "{{ cockpit_cert_owner }}"
+    group: "{{ cockpit_cert_group }}"
+    mode: "{{ cockpit_cert_mode }}"
   become: true
+  notify: Restart cockpit
 
-- name: (Debian) Set proper ownership for SSL files
+- name: Ensure the certbot deploy hook directory exists
   ansible.builtin.file:
-    path: "{{ item }}"
-    owner: cockpit-ws
-    group: cockpit-ws
-    mode: "0600"
-  loop:
-    - "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt"
-    - "{{ cockpit_cert_path }}/{{ cockpit_hostname }}.key"
-  become: true
-  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
-
-- name: "(Fedora) Create renewal hook script"
-  ansible.builtin.copy:
-    content: |
-      #!/bin/bash
-      cp {{ cockpit_letsencrypt_cert_path }}/fullchain.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt
-      cp {{ cockpit_letsencrypt_cert_path }}/privkey.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.key
-      systemctl restart cockpit
-    dest: /etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    owner: root
+    group: root
     mode: "0755"
   become: true
-  when: ansible_facts.distribution == "Fedora"
 
-- name: "(Debian) Create renewal hook script"
-  ansible.builtin.copy:
-    content: |
-      #!/bin/bash
-      cp {{ cockpit_letsencrypt_cert_path }}/fullchain.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt
-      cp {{ cockpit_letsencrypt_cert_path }}/privkey.pem {{ cockpit_cert_path }}/{{ cockpit_hostname }}.key
-      chown cockpit-ws:cockpit-ws {{ cockpit_cert_path }}/{{ cockpit_hostname }}.crt {{ cockpit_cert_path }}/{{ cockpit_hostname }}.key
-      systemctl restart cockpit
-    dest: /etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh
+- name: Ensure the Cockpit certificate deploy hook is present
+  ansible.builtin.template:
+    src: cockpit-cert-deploy.sh.j2
+    dest: /etc/letsencrypt/renewal-hooks/deploy/10-cockpit.sh
+    owner: root
+    group: root
     mode: "0755"
   become: true
-  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
 
-- name: "(General) Enable cockpit service"
-  ansible.builtin.service:
-    name: cockpit
-    state: started
+# Superseded by the deploy hook above, which runs only on an actual renewal.
+- name: Ensure the legacy post-renewal hook is absent
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/post/001-restart-cockpit.sh
+    state: absent
+  become: true
+
+- name: Ensure the Cockpit socket is enabled and started
+  ansible.builtin.systemd_service:
+    name: "{{ cockpit_service_name }}"
     enabled: true
+    state: started
   become: true
 
-- name: "(Ubuntu) Allow 9090 in UFW for cockpit from trusted CIDR only"
+- name: Ensure Cockpit is reachable from the allowed CIDRs (firewalld)
+  ansible.posix.firewalld:
+    rich_rule: "rule family=ipv4 source address={{ item }} port port=9090 protocol=tcp accept"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ cockpit_allowed_cidrs }}"
+  become: true
+  when:
+    - ansible_facts.os_family == "RedHat"
+    - cockpit_allowed_cidrs | length > 0
+
+- name: Ensure Cockpit is reachable from the allowed CIDR (UFW)
   community.general.ufw:
     rule: allow
     port: "9090"
     proto: tcp
     from_ip: "{{ cockpit_allowed_cidr }}"
   become: true
-  notify: Restart cockpit # Execute handler in handlers/main.yml
-  when: ansible_facts['os_family'] == "Debian" and ansible_facts['distribution'] == "Ubuntu"
+  notify: Restart cockpit
+  when:
+    - ansible_facts.os_family == "Debian"
+    - ansible_facts.distribution == "Ubuntu"

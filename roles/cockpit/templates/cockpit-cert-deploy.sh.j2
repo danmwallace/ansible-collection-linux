@@ -1,0 +1,19 @@
+#!/bin/bash
+# Managed by Ansible - danmwallace.linux.cockpit
+# certbot deploy hook: certbot runs this only when a certificate was renewed, and
+# exports RENEWED_LINEAGE for the lineage it renewed.
+set -euo pipefail
+
+lineage={{ cockpit_letsencrypt_cert_path | quote }}
+crt={{ (cockpit_cert_path ~ '/' ~ cockpit_hostname ~ '.crt') | quote }}
+key={{ (cockpit_cert_path ~ '/' ~ cockpit_hostname ~ '.key') | quote }}
+
+# Other certificates on this host must not disturb Cockpit's.
+[ "${RENEWED_LINEAGE:-}" = "$lineage" ] || exit 0
+
+install -o {{ cockpit_cert_owner }} -g {{ cockpit_cert_group }} -m {{ cockpit_cert_mode }} \
+  "$lineage/fullchain.pem" "$crt"
+install -o {{ cockpit_cert_owner }} -g {{ cockpit_cert_group }} -m {{ cockpit_cert_mode }} \
+  "$lineage/privkey.pem" "$key"
+
+systemctl restart {{ cockpit_service_name | quote }}

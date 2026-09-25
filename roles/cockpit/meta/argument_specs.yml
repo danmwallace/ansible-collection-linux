@@ -35,3 +35,37 @@ argument_specs:
         type: str
         required: false
         default: "10.0.0.0/8"
+      cockpit_cert_owner:
+        description:
+          - Owner of the certificate and key in C(cockpit_cert_path). Defaults to
+            C(cockpit-ws) on Debian-family hosts and C(root) elsewhere; Fedora has no
+            C(cockpit-ws) user.
+        type: str
+        required: false
+        default: "{{ 'cockpit-ws' if ansible_facts.os_family == 'Debian' else 'root' }}"
+      cockpit_cert_group:
+        description: Group of the certificate and key in C(cockpit_cert_path).
+        type: str
+        required: false
+        default: "{{ cockpit_cert_owner }}"
+      cockpit_cert_mode:
+        description: Mode applied to the certificate and key in C(cockpit_cert_path).
+        type: str
+        required: false
+        default: "0600"
+      cockpit_service_name:
+        description:
+          - systemd unit managed and restarted after a certificate change.
+            C(cockpit.service) is static on Fedora, so the socket is the correct unit.
+        type: str
+        required: false
+        default: cockpit.socket
+      cockpit_allowed_cidrs:
+        description:
+          - Source CIDRs allowed to reach Cockpit on TCP 9090 through firewalld
+            (RedHat-family hosts). Each entry becomes a rich rule. An empty list leaves
+            the firewall untouched, so upgrading never opens a port by itself.
+        type: list
+        elements: str
+        required: false
+        default: []
