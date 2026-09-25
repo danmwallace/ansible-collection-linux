@@ -7,6 +7,31 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-24
+
+### Added
+
+- `cloudflare_ssl`: `cloudflare_ssl_domains` requests names other than the inventory
+  hostname (the first entry names the lineage), and `cloudflare_ssl_manage_renewal_timer`
+  enables the packaged certbot renewal timer.
+- `cockpit`: `cockpit_allowed_cidrs` opens TCP 9090 through firewalld with one rich rule
+  per CIDR, empty by default; `cockpit_service_name`, `cockpit_cert_owner`,
+  `cockpit_cert_group` and `cockpit_cert_mode`; `cockpit_remove_blanket_firewalld_service`
+  disables the zone-wide `cockpit` firewalld service once `cockpit_allowed_cidrs` is set.
+- First molecule scenarios for both roles.
+
+### Fixed
+
+- `cloudflare_ssl`: install the `certbot` CLI package, which ships
+  `certbot-renew.timer`. With only `python3-certbot` installed there was no timer, so
+  certificates were issued once and never renewed — srv01's Cockpit certificate expired
+  on 2026-08-02 as a result.
+- `cockpit`: renewals are delivered by a `renewal-hooks/deploy` hook guarded on
+  `RENEWED_LINEAGE` instead of a `renewal-hooks/post` hook that ran after every attempt;
+  the legacy hook is removed. The role manages `cockpit.socket` instead of the static
+  `cockpit.service`, and sets certificate ownership through variables rather than a
+  Debian-only chown task.
+
 ## [1.5.0] - 2026-09-13
 
 ### Added
