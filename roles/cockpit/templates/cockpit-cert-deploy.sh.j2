@@ -8,9 +8,14 @@ lineage={{ cockpit_letsencrypt_cert_path | quote }}
 crt={{ (cockpit_cert_path ~ '/' ~ cockpit_hostname ~ '.crt') | quote }}
 key={{ (cockpit_cert_path ~ '/' ~ cockpit_hostname ~ '.key') | quote }}
 
+# Clean up any staging files left by an interrupted install/mv below, whether we
+# exit early, fail partway, or finish normally (mv already moved them, so rm -f
+# is a no-op then).
+trap 'rm -f "$crt.new" "$key.new"' EXIT
+
 # Other certificates on this host must not disturb Cockpit's.
 if [ "${RENEWED_LINEAGE:-}" != "$lineage" ]; then
-  logger -t cockpit-cert-deploy "skipping: RENEWED_LINEAGE=${RENEWED_LINEAGE:-} != $lineage"
+  logger -t cockpit-cert-deploy "skipping: RENEWED_LINEAGE=${RENEWED_LINEAGE:-} != $lineage" || true
   exit 0
 fi
 
@@ -28,4 +33,4 @@ mv -f "$key.new" "$key"
 
 systemctl restart {{ cockpit_service_name | quote }}
 
-logger -t cockpit-cert-deploy "installed renewed certificate for {{ cockpit_hostname }}"
+logger -t cockpit-cert-deploy "installed renewed certificate for {{ cockpit_hostname }}" || true

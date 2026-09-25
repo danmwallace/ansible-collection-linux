@@ -17,7 +17,11 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 - `cockpit`: `cockpit_allowed_cidrs` opens TCP 9090 through firewalld with one rich rule
   per CIDR, empty by default; `cockpit_service_name`, `cockpit_cert_owner`,
   `cockpit_cert_group` and `cockpit_cert_mode`; `cockpit_remove_blanket_firewalld_service`
-  disables the zone-wide `cockpit` firewalld service once `cockpit_allowed_cidrs` is set.
+  disables the zone-wide `cockpit` firewalld service once `cockpit_allowed_cidrs` is set;
+  `cockpit_firewalld_zone` (str, default `""` = the host's default zone) targets the rich
+  rules and blanket-service removal at a specific zone, since a host whose interfaces are
+  bound to a non-default zone otherwise gets rich rules in an unused zone while the real
+  zone-wide allow survives.
 - First molecule scenarios for both roles.
 
 ### Fixed
