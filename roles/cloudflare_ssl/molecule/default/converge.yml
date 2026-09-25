@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply cloudflare_ssl with test values
+      ansible.builtin.include_role:
+        name: danmwallace.linux.cloudflare_ssl
+      vars:
+        cloudflare_ssl_email: molecule@test.local
+        cloudflare_ssl_api_token: molecule-fake-token
+        cloudflare_ssl_domains:
+          - ssl.test.local

@@ -1,9 +1,21 @@
 ---
 # defaults file for cloudflare_ssl
+
+# The certbot CLI package is what ships the renewal timer (certbot-renew.timer on
+# Fedora, certbot.timer on Debian). python3-certbot alone provides the library and
+# certbot-3 only, which is why renewal silently never ran before.
 cloudflare_ssl_debian_packages:
-  - python3-certbot
+  - certbot
   - python3-certbot-dns-cloudflare
 
 cloudflare_ssl_fedora_packages:
-  - python3-certbot
+  - certbot
   - python3-certbot-dns-cloudflare
+
+# Names requested in the certificate. The first entry is the lineage name, so
+# /etc/letsencrypt/live/<first>/ is where certbot stores it.
+cloudflare_ssl_domains:
+  - "{{ inventory_hostname }}"
+
+# Enable and start the packaged certbot renewal timer. Without it nothing renews.
+cloudflare_ssl_manage_renewal_timer: true

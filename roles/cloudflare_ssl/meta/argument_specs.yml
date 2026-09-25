@@ -21,13 +21,30 @@ argument_specs:
           - Supply from an ansible-vault encrypted file.
         type: str
         required: true
+      cloudflare_ssl_domains:
+        description:
+          - Names requested in the certificate. The first entry names the lineage, so the
+            certificate lands in /etc/letsencrypt/live/<first entry>/.
+        type: list
+        elements: str
+        required: false
+        default:
+          - "{{ inventory_hostname }}"
+      cloudflare_ssl_manage_renewal_timer:
+        description:
+          - Enable and start the packaged certbot renewal timer (certbot-renew.timer on
+            RedHat-family, certbot.timer on Debian-family). Leave true unless another
+            mechanism owns renewal; without it nothing renews.
+        type: bool
+        required: false
+        default: true
       cloudflare_ssl_debian_packages:
         description: Packages installed via apt on Ubuntu/Debian to provide certbot and the Cloudflare DNS plugin.
         type: list
         elements: str
         required: false
         default:
-          - python3-certbot
+          - certbot
           - python3-certbot-dns-cloudflare
       cloudflare_ssl_fedora_packages:
         description: Packages installed via dnf on Fedora Server to provide certbot and the Cloudflare DNS plugin.
@@ -35,5 +52,5 @@ argument_specs:
         elements: str
         required: false
         default:
-          - python3-certbot
+          - certbot
           - python3-certbot-dns-cloudflare

@@ -1,0 +1,54 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Check the certbot CLI is installed
+      ansible.builtin.command: command -v certbot
+      register: cloudflare_ssl_t_bin
+      changed_when: false
+
+    - name: Stat the Cloudflare credentials file
+      ansible.builtin.stat:
+        path: /root/.secrets/cloudflare.ini
+      register: cloudflare_ssl_t_creds
+
+    - name: Assert the CLI and the root-only credentials file are present
+      ansible.builtin.assert:
+        that:
+          - cloudflare_ssl_t_bin.stdout | length > 0
+          - cloudflare_ssl_t_creds.stat.exists
+          - cloudflare_ssl_t_creds.stat.mode == '0400'
+          - cloudflare_ssl_t_creds.stat.pw_name == 'root'
+
+    - name: Check the renewal timer is enabled
+      ansible.builtin.command: systemctl is-enabled certbot-renew.timer  # noqa command-instead-of-module
+      register: cloudflare_ssl_t_timer
+      changed_when: false
+
+    - name: Check the renewal timer is active
+      ansible.builtin.command: systemctl is-active certbot-renew.timer  # noqa command-instead-of-module
+      register: cloudflare_ssl_t_timer_active
+      changed_when: false
+
+    - name: Assert the renewal timer is enabled and running
+      ansible.builtin.assert:
+        that:
+          - cloudflare_ssl_t_timer.stdout == 'enabled'
+          - cloudflare_ssl_t_timer_active.stdout == 'active'
+
+    - name: Read the fake certificate back
+      ansible.builtin.slurp:
+        src: /etc/letsencrypt/live/ssl.test.local/cert.pem
+      register: cloudflare_ssl_t_cert
+
+    - name: Stat the archive directory certbot would have created
+      ansible.builtin.stat:
+        path: /etc/letsencrypt/archive
+      register: cloudflare_ssl_t_archive
+
+    - name: Assert certbot never ran against the existing lineage
+      ansible.builtin.assert:
+        that:
+          - "'molecule fake certificate' in (cloudflare_ssl_t_cert.content | b64decode)"
+          - not cloudflare_ssl_t_archive.stat.exists

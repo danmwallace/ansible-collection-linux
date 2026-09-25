@@ -1,34 +1,32 @@
 ---
 # tasks file for cloudflare_ssl
 
-# #######################################
-# Ubuntu/Debian specific
+- name: Assert the Cloudflare credentials are configured
+  ansible.builtin.assert:
+    that:
+      - cloudflare_ssl_email | length > 0
+      - cloudflare_ssl_api_token | length > 0
+      - cloudflare_ssl_domains | length > 0
+    fail_msg: >-
+      cloudflare_ssl_email, cloudflare_ssl_api_token and cloudflare_ssl_domains
+      must all be set (supply the first two from Ansible Vault).
+  no_log: true
 
-- name: (Ubuntu) Install Certbot and Cloudflare plugin for Cloudflare DNS Challenge
+- name: Ensure certbot and the Cloudflare DNS plugin are installed (Debian family)
   ansible.builtin.package:
     name: "{{ cloudflare_ssl_debian_packages }}"
     state: present
   become: true
-  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
+  when: ansible_facts.os_family == "Debian"
 
-########################################
-# Fedora specific
-
-# - name: "(Fedora - Atomic) Install Certbot and Cloudflare plugin for Cloudflare DNS challenge"
-#   community.general.rpm_ostree_pkg:
-#     name: "{{ cloudflare_ssl_fedora_packages }}"
-#     state: present
-#   become: true
-#   when: ansible_facts['os_family'] == "RedHat" and ansible_facts['distribution'] == "Fedora" and variant_id.stdout == "iot"
-
-- name: (Fedora - Server) Install python3-certbot-dns-cloudflare for Cloudflare DNS challenge
-  ansible.builtin.dnf:
+- name: Ensure certbot and the Cloudflare DNS plugin are installed (RedHat family)
+  ansible.builtin.package:
     name: "{{ cloudflare_ssl_fedora_packages }}"
     state: present
   become: true
-  when: ansible_facts.distribution == "Fedora"
+  when: ansible_facts.os_family == "RedHat"
 
-- name: (General) Create directory for Cloudflare credentials
+- name: Ensure the directory for Cloudflare credentials exists
   ansible.builtin.file:
     path: /root/.secrets
     state: directory
@@ -37,7 +35,7 @@
     mode: "0700"
   become: true
 
-- name: (General) Generate cloudflare.ini file for certbot
+- name: Ensure the Cloudflare credentials file is present
   ansible.builtin.template:
     src: cloudflare.ini.j2
     dest: /root/.secrets/cloudflare.ini
@@ -45,33 +43,27 @@
     group: root
     mode: "0400"
   become: true
+  no_log: true
 
-- name: (Fedora) Generate SSL certificate via Cloudflare DNS Challenge for {{ inventory_hostname }}
-  ansible.builtin.shell: |
-    certbot-3 certonly \
-      --dns-cloudflare \
-      --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
-      --dns-cloudflare-propagation-seconds 60 \
-      --agree-tos \
-      --email {{ cloudflare_ssl_email }} \
-      --non-interactive \
-      --domains {{ inventory_hostname }}
-  args:
-    creates: "/etc/letsencrypt/live/{{ inventory_hostname }}/cert.pem"
+- name: Ensure a certificate exists for {{ cloudflare_ssl_domains | join(', ') }}
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly
+      --dns-cloudflare
+      --dns-cloudflare-credentials /root/.secrets/cloudflare.ini
+      --dns-cloudflare-propagation-seconds 60
+      --agree-tos
+      --email {{ cloudflare_ssl_email }}
+      --non-interactive
+      --cert-name {{ cloudflare_ssl_domains[0] }}
+      --domains {{ cloudflare_ssl_domains | join(',') }}
+    creates: "/etc/letsencrypt/live/{{ cloudflare_ssl_domains[0] }}/cert.pem"
   become: true
-  when: ansible_facts.distribution == "Fedora"
 
-- name: (Debian) Generate SSL certificate via Cloudflare DNS Challenge for {{ inventory_hostname }}
-  ansible.builtin.shell: |
-    certbot certonly \
-      --dns-cloudflare \
-      --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
-      --dns-cloudflare-propagation-seconds 60 \
-      --agree-tos \
-      --email {{ cloudflare_ssl_email }} \
-      --non-interactive \
-      --domains {{ inventory_hostname }}
-  args:
-    creates: "/etc/letsencrypt/live/{{ inventory_hostname }}/cert.pem"
+- name: Ensure the certbot renewal timer is enabled and started
+  ansible.builtin.systemd_service:
+    name: "{{ _cloudflare_ssl_renewal_timer }}"
+    enabled: true
+    state: started
   become: true
-  when: ansible_facts.distribution == "Ubuntu" or ansible_facts.distribution == "Debian"
+  when: cloudflare_ssl_manage_renewal_timer
