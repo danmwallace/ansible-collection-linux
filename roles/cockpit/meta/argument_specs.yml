@@ -77,3 +77,12 @@ argument_specs:
         type: bool
         required: false
         default: true
+      cockpit_firewalld_zone:
+        description:
+          - firewalld zone the rich rules and blanket-service removal act on. An
+            empty string uses firewalld's default zone. Set this explicitly on a
+            host whose active interfaces are bound to a non-default zone, or the
+            rules land in a zone nothing uses.
+        type: str
+        required: false
+        default: ""

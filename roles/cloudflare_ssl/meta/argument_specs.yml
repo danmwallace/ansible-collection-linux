@@ -21,6 +21,7 @@ argument_specs:
           - Supply from an ansible-vault encrypted file.
         type: str
         required: true
+        no_log: true
       cloudflare_ssl_domains:
         description:
           - Names requested in the certificate. The first entry names the lineage, so the

@@ -22,6 +22,12 @@ cockpit_allowed_cidrs: []
 # so only the rich rules above grant access.
 cockpit_remove_blanket_firewalld_service: true
 
+# firewalld zone the rich rules and blanket-service removal act on. Empty string
+# means "use firewalld's default zone" (ansible.posix.firewalld's own default).
+# Set this explicitly on any host whose active interfaces are bound to a
+# non-default zone, or the rules land in a zone nothing uses.
+cockpit_firewalld_zone: ""
+
 # Source CIDR allowed to reach Cockpit (port 9090) via UFW on Ubuntu. Defaults to
 # RFC-1918 private ranges; set to your homelab CIDR (e.g. 192.168.1.0/24) for
 # tighter scoping.

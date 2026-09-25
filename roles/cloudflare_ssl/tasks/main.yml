@@ -10,7 +10,6 @@
     fail_msg: >-
       cloudflare_ssl_email, cloudflare_ssl_api_token and cloudflare_ssl_domains
       must all be set (supply the first two from Ansible Vault).
-  no_log: true
 
 - name: Ensure certbot and the Cloudflare DNS plugin are installed (Debian family)
   ansible.builtin.package:

@@ -14,6 +14,20 @@
     mode: "0755"
   become: true
 
+- name: Check whether the Let's Encrypt lineage is present
+  ansible.builtin.stat:
+    path: "{{ cockpit_letsencrypt_cert_path }}/fullchain.pem"
+  register: cockpit_lineage
+  become: true
+
+- name: Assert a certificate exists to install
+  ansible.builtin.assert:
+    that: cockpit_lineage.stat.exists
+    fail_msg: >-
+      No certificate at {{ cockpit_letsencrypt_cert_path }} — run
+      danmwallace.linux.cloudflare_ssl first.
+  when: not ansible_check_mode
+
 - name: Ensure the Cockpit certificate is installed
   ansible.builtin.copy:
     src: "{{ cockpit_letsencrypt_cert_path }}/fullchain.pem"
@@ -23,6 +37,7 @@
     group: "{{ cockpit_cert_group }}"
     mode: "{{ cockpit_cert_mode }}"
   become: true
+  when: cockpit_lineage.stat.exists
   notify: Restart cockpit
 
 - name: Ensure the Cockpit private key is installed
@@ -34,6 +49,7 @@
     group: "{{ cockpit_cert_group }}"
     mode: "{{ cockpit_cert_mode }}"
   become: true
+  when: cockpit_lineage.stat.exists
   notify: Restart cockpit
 
 - name: Ensure the certbot deploy hook directory exists
@@ -71,6 +87,7 @@
 - name: Ensure Cockpit is reachable from the allowed CIDRs (firewalld)
   ansible.posix.firewalld:
     rich_rule: "rule family=ipv4 source address={{ item }} port port=9090 protocol=tcp accept"
+    zone: "{{ cockpit_firewalld_zone | default(omit, true) }}"
     permanent: true
     immediate: true
     state: enabled
@@ -86,6 +103,7 @@
 - name: Ensure the zone-wide Cockpit firewalld service is not enabled
   ansible.posix.firewalld:
     service: cockpit
+    zone: "{{ cockpit_firewalld_zone | default(omit, true) }}"
     state: disabled
     permanent: true
     immediate: true

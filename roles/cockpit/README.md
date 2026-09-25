@@ -46,6 +46,7 @@ Validated by `meta/argument_specs.yml`. All variables have defaults.
 | `cockpit_service_name` | str | no | `cockpit.socket` | systemd unit managed and restarted after a certificate change. `cockpit.service` is static on Fedora, so the socket is the correct unit. |
 | `cockpit_allowed_cidrs` | list | no | `[]` | Source **CIDRs** allowed to reach Cockpit on TCP 9090 through **firewalld** (RedHat-family hosts). Each entry becomes a rich rule. Empty leaves the firewall untouched. |
 | `cockpit_remove_blanket_firewalld_service` | bool | no | `true` | Disables the zone-wide `cockpit` firewalld service (RedHat-family), so only the `cockpit_allowed_cidrs` rich rules grant access. Acts only when `cockpit_allowed_cidrs` is non-empty. |
+| `cockpit_firewalld_zone` | str | no | `""` | firewalld zone the rich rules and blanket-service removal act on. Empty means firewalld's default zone. |
 | `cockpit_allowed_cidr` | str | no | `"10.0.0.0/8"` | Source **CIDR** (singular) allowed to reach Cockpit on port 9090 via **UFW** (Ubuntu only). |
 
 ### The `cockpit_allowed_cidr` / `cockpit_allowed_cidrs` trap
@@ -125,6 +126,15 @@ by the cert/key copy tasks and by the Ubuntu UFW rule task.
   opens a port by itself.** The firewalld rich-rule and blanket-service tasks
   are both gated on `cockpit_allowed_cidrs | length > 0`; leave it unset and
   this role makes no firewall changes on RedHat-family hosts.
+- **`cockpit_firewalld_zone` defaults to firewalld's default zone — set it
+  explicitly if the host's active interfaces are bound to a different zone.**
+  `ansible.posix.firewalld` acts on `firewall-cmd --get-default-zone` when no
+  `zone:` is given. On a host whose interfaces sit in a non-default zone, the
+  rich rules land in a zone nothing uses, and the blanket-service removal
+  reports `changed` against that same unused zone while the real zone-wide
+  `cockpit` allow survives — the CIDR restriction only *looks* enforced. Set
+  `cockpit_firewalld_zone` to the zone your interfaces are actually in
+  (`firewall-cmd --get-active-zones`) whenever it isn't the default.
 - **`cockpit_remove_blanket_firewalld_service` revokes web-console access
   for anyone outside `cockpit_allowed_cidrs`.** firewalld ships a zone-wide
   `cockpit` service (all sources, port 9090) that an additive rich rule

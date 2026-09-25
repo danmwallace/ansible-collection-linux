@@ -75,6 +75,30 @@
       ansible.builtin.assert:
         that: "'initial.test.local' in cockpit_t_subject_before.stdout"
 
+    - name: Check whether journald is available in the container
+      ansible.builtin.command:
+        cmd: pidof systemd
+      register: cockpit_t_has_systemd
+      changed_when: false
+      failed_when: false
+
+    - name: Read the journal for the lineage-mismatch skip message
+      ansible.builtin.command:
+        cmd: journalctl -t cockpit-cert-deploy --no-pager
+      register: cockpit_t_journal
+      changed_when: false
+      failed_when: false
+      when: cockpit_t_has_systemd.rc == 0
+
+    - name: Assert the skip message was logged for the unrelated lineage
+      ansible.builtin.assert:
+        that: >-
+          'skipping: RENEWED_LINEAGE=/etc/letsencrypt/live/somethingelse.test.local
+          != /etc/letsencrypt/live/cockpit.test.local' in cockpit_t_journal.stdout
+      when:
+        - cockpit_t_has_systemd.rc == 0
+        - cockpit_t_journal.rc == 0
+
     - name: Run the deploy hook for this host's lineage
       ansible.builtin.command:
         cmd: /etc/letsencrypt/renewal-hooks/deploy/10-cockpit.sh
@@ -138,3 +162,13 @@
       ansible.builtin.assert:
         that:
           - "'renewed.test.local' in cockpit_t_subject_after.stdout"
+
+    - name: Find any leftover staging files in the cert directory
+      ansible.builtin.find:
+        paths: /etc/cockpit/ws-certs.d
+        patterns: "*.new"
+      register: cockpit_t_staging_files
+
+    - name: Assert no staging (*.new) files were left behind
+      ansible.builtin.assert:
+        that: cockpit_t_staging_files.files | length == 0
