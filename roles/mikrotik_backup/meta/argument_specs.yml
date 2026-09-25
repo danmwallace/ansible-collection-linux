@@ -79,10 +79,19 @@ argument_specs:
         description: During the role run, open an SFTP session to every device and fail with the public key to authorise if any cannot be reached.
         type: bool
         default: true
-      mikrotik_backup_schedule:
-        description: systemd OnCalendar expression for the timer.
+      mikrotik_backup_device_timezone:
+        description:
+          - IANA timezone the devices use when stamping file names.
+          - The run script computes today's and yesterday's date in this zone, so the target
+            host's own timezone (often UTC) does not matter.
         type: str
-        default: "*-*-* 01:00:00"
+        default: America/New_York
+      mikrotik_backup_schedule:
+        description:
+          - systemd OnCalendar expression for the timer.
+          - A trailing timezone keeps the pull after the device job all year round.
+        type: str
+        default: "*-*-* 01:15:00 America/New_York"
       mikrotik_backup_randomized_delay:
         description: systemd RandomizedDelaySec for the timer.
         type: str

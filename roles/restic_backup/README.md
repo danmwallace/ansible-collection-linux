@@ -189,9 +189,7 @@ new schedule or service definition takes effect without a manual
 Before a host's first run, it needs an account and repository directory on
 the TrueNAS SFTP server. That side is provisioned with
 `tools/truenas-restic-bootstrap.py`, which lives in the control repo
-(`ansible-homelab-cfg`) — not in this collection, and not yet present as of
-this release (it lands with the control-repo work that consumes this role).
-Run it from that repo once it exists:
+(`ansible-homelab-cfg`), not in this collection. Run it from that repo:
 
 ```bash
 tools/truenas-restic-bootstrap.py [--dry-run] host=/path/to/key.pub ...

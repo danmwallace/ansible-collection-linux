@@ -27,3 +27,4 @@
             port: 22
             remote_dir: disk1/backups
         mikrotik_backup_kuma_push_url: https://kuma.invalid/api/push/molecule
+        mikrotik_backup_device_timezone: Etc/GMT-14

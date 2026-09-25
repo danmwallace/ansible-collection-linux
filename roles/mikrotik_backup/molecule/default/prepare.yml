@@ -30,8 +30,13 @@
         - /srv/routeros/disk1
         - "{{ remote_dir }}"
 
+    # Devices live in Etc/GMT-14 (UTC+14). verify.yml runs the script under TZ=Etc/GMT+12
+    # (UTC-12); the two zones are always on different calendar days, so fixtures named
+    # here only match if the script honours mikrotik_backup_device_timezone.
     - name: Read today's date as the device job would stamp it
       ansible.builtin.command: date +%Y%m%d
+      environment:
+        TZ: Etc/GMT-14
       register: mikrotik_backup_t_today
       changed_when: false
 

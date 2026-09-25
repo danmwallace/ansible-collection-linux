@@ -10,13 +10,15 @@ backup_dir={{ mikrotik_backup_dir | quote }}
 retention_minutes=$(( {{ mikrotik_backup_retention_days | int }} * 1440 ))
 allow_previous_day={{ mikrotik_backup_allow_previous_day | bool | ternary('1', '0') }}
 pubkey={{ (mikrotik_backup_ssh_key_path ~ '.pub') | quote }}
+device_tz={{ mikrotik_backup_device_timezone | quote }}
 
 log() { printf 'mikrotik-backup: %s\n' "$*"; }
 err() { printf 'mikrotik-backup: ERROR: %s\n' "$*" >&2; }
 
 # Evaluated once so every device is checked against the same day, even if the run crosses midnight.
-today=$(date +%Y%m%d)
-yesterday=$(date -d yesterday +%Y%m%d)
+# Dates come from the devices' timezone: they name the files, not this host.
+today=$(TZ="$device_tz" date +%Y%m%d)
+yesterday=$(TZ="$device_tz" date -d yesterday +%Y%m%d)
 failed=()
 
 # fetch_pair <name> <remote_dir> <identity> <stamp>

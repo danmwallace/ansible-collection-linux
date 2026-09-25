@@ -14,6 +14,20 @@
       remote_dir may only contain letters, digits, '.', '_' and '-' (plus '/' in remote_dir),
       and host_key must be "<type> <base64>" without a hostname.
 
+- name: Check the device timezone exists on this host
+  ansible.builtin.stat:
+    path: "/usr/share/zoneinfo/{{ mikrotik_backup_device_timezone }}"
+  register: mikrotik_backup_tz_file
+
+- name: Assert the device timezone is valid
+  ansible.builtin.assert:
+    that:
+      - mikrotik_backup_device_timezone is match('^[A-Za-z0-9_+/-]+$')
+      - mikrotik_backup_tz_file.stat.exists
+    fail_msg: >-
+      mikrotik_backup_device_timezone '{{ mikrotik_backup_device_timezone }}' is not a timezone
+      under /usr/share/zoneinfo (is tzdata installed?).
+
 - name: Ensure the SFTP client is installed
   ansible.builtin.package:
     name: openssh-clients

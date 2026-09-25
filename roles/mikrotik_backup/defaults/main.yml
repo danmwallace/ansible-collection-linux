@@ -26,8 +26,12 @@ mikrotik_backup_ssh_key_path: /etc/mikrotik-backup/id_ed25519
 # Test SFTP access to every device during the role run and fail with the key to authorise
 mikrotik_backup_verify_connectivity: true
 
-# Schedule: after the on-device 00:30 job, before restic_backup at 01:30
-mikrotik_backup_schedule: "*-*-* 01:00:00"
+# Timezone the devices use to stamp file names (<identity>-<YYYYMMDD>). The pull
+# computes "today" in this zone, so it works on a UTC host.
+mikrotik_backup_device_timezone: America/New_York
+
+# Schedule: 45 min after the on-device 00:30 job, expressed in the devices' timezone
+mikrotik_backup_schedule: "*-*-* 01:15:00 America/New_York"
 mikrotik_backup_randomized_delay: 5m
 
 # Uptime Kuma push URL without query string, e.g. https://uptime.example/api/push/<token>

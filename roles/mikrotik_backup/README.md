@@ -26,7 +26,7 @@ service exit non-zero.
 - On each RouterOS device, a read-only backup account that authorises this
   host's public key — see [Device bootstrap](#device-bootstrap)
 - An on-device script and scheduler that write the backup pair before the
-  pull runs (default 00:30 on the device, pull at 01:00)
+  pull runs (default 00:30 device time, pull at 01:15 device time)
 
 ## Role Variables
 
@@ -41,7 +41,8 @@ service exit non-zero.
 | `mikrotik_backup_allow_previous_day` | bool | no | `false` | When today's pair is missing or incomplete, accept yesterday's pair instead of failing the device. |
 | `mikrotik_backup_ssh_key_path` | str | no | `/etc/mikrotik-backup/id_ed25519` | Private key path for the dedicated SSH identity. The public key is written next to it with a `.pub` suffix. |
 | `mikrotik_backup_verify_connectivity` | bool | no | `true` | During the role run, open an SFTP session to every device and fail with the public key to authorise if any cannot be reached. |
-| `mikrotik_backup_schedule` | str | no | `"*-*-* 01:00:00"` | systemd `OnCalendar` expression for the timer. |
+| `mikrotik_backup_device_timezone` | str | no | `America/New_York` | IANA timezone the devices stamp file names in. "Today" is computed in this zone, so a UTC host still fetches the right pair. Must exist under `/usr/share/zoneinfo`. |
+| `mikrotik_backup_schedule` | str | no | `"*-*-* 01:15:00 America/New_York"` | systemd `OnCalendar` expression for the timer. Keep the trailing timezone so the pull stays after the device job across DST. |
 | `mikrotik_backup_randomized_delay` | str | no | `5m` | systemd `RandomizedDelaySec` for the timer. |
 | `mikrotik_backup_kuma_push_url` | str | no | `""` | Uptime Kuma push URL, without a query string. Pinged only after every device succeeded. Empty disables it. **Supply from vault.** |
 
@@ -161,11 +162,15 @@ collecting the key.
 
 ## Notes
 
-- **Timer ordering.** The chain is device job at 00:30 → this pull at 01:00
-  (plus up to `mikrotik_backup_randomized_delay`) → `restic_backup` at 01:30
-  (plus its own delay). Keep the device clocks on NTP and in the same timezone
-  as the target: the filename date is computed by the device, the expected date
-  by the target.
+- **Timezones and timer ordering.** Devices stamp files with their own local
+  date (00:30 device time by default). This role computes "today" in
+  `mikrotik_backup_device_timezone` and schedules the pull in that zone
+  (01:15 plus up to `mikrotik_backup_randomized_delay`), so the host's timezone
+  doesn't matter. Keep the device clocks on NTP. `restic_backup`'s schedule is
+  evaluated in the *host's* timezone: on a UTC host its default `01:30` is the
+  previous evening in the Americas, so restic ships the pulled files on its
+  next run. Move restic's schedule after the pull if a same-night off-host
+  copy matters.
 - **Add the directory to restic.** Nothing leaves the host until
   `mikrotik_backup_dir` is in `restic_backup_paths`. Local retention is short
   on purpose; restic holds the history.
