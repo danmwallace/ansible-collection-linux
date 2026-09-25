@@ -80,6 +80,21 @@
     - ansible_facts.os_family == "RedHat"
     - cockpit_allowed_cidrs | length > 0
 
+# Additive rich rules cannot narrow access while the zone-wide "cockpit" firewalld
+# service (all sources, port 9090) stays enabled; it must be disabled for the rich
+# rules above to actually restrict access to cockpit_allowed_cidrs.
+- name: Ensure the zone-wide Cockpit firewalld service is not enabled
+  ansible.posix.firewalld:
+    service: cockpit
+    state: disabled
+    permanent: true
+    immediate: true
+  become: true
+  when:
+    - ansible_facts.os_family == "RedHat"
+    - cockpit_allowed_cidrs | length > 0
+    - cockpit_remove_blanket_firewalld_service
+
 - name: Ensure Cockpit is reachable from the allowed CIDR (UFW)
   community.general.ufw:
     rule: allow

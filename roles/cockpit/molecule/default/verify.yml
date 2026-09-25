@@ -88,6 +88,47 @@
       register: cockpit_t_subject_after
       changed_when: false
 
+    - name: Stat the installed certificate and key after the hook ran
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ cockpit_t_crt }}"
+        - "{{ cockpit_t_key }}"
+      register: cockpit_t_files_after
+
+    - name: Assert the post-hook cert material is still root-only
+      ansible.builtin.assert:
+        that:
+          - cockpit_t_files_after.results[0].stat.exists
+          - cockpit_t_files_after.results[0].stat.mode == '0600'
+          - cockpit_t_files_after.results[0].stat.pw_name == 'root'
+          - cockpit_t_files_after.results[1].stat.exists
+          - cockpit_t_files_after.results[1].stat.mode == '0600'
+          - cockpit_t_files_after.results[1].stat.pw_name == 'root'
+
+    - name: Compare the installed cert and key moduli
+      ansible.builtin.shell:  # noqa command-instead-of-module
+        cmd: >-
+          set -o pipefail &&
+          openssl x509 -noout -modulus -in {{ cockpit_t_crt }} | openssl md5
+        executable: /bin/bash
+      register: cockpit_t_crt_modulus
+      changed_when: false
+
+    - name: Compare the installed key modulus
+      ansible.builtin.shell:  # noqa command-instead-of-module
+        cmd: >-
+          set -o pipefail &&
+          openssl rsa -noout -modulus -in {{ cockpit_t_key }} | openssl md5
+        executable: /bin/bash
+      register: cockpit_t_key_modulus
+      changed_when: false
+
+    - name: Assert the installed certificate and key are a matching pair
+      ansible.builtin.assert:
+        that:
+          - cockpit_t_crt_modulus.stdout == cockpit_t_key_modulus.stdout
+
     # cockpit-ws will not answer on 127.0.0.1:9090 inside the molecule container
     # (openssl s_client gets an immediately-closed connection: rc=1, empty stdout,
     # "Could not find certificate from <stdin>" — no PAM/D-Bus session environment

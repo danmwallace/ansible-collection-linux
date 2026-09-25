@@ -17,6 +17,11 @@ cockpit_service_name: cockpit.socket
 # (RedHat family). Empty means the firewall is left untouched.
 cockpit_allowed_cidrs: []
 
+# firewalld ships a zone-wide "cockpit" service (all sources, port 9090) that an
+# additive rich rule cannot narrow. Disable it once cockpit_allowed_cidrs is set,
+# so only the rich rules above grant access.
+cockpit_remove_blanket_firewalld_service: true
+
 # Source CIDR allowed to reach Cockpit (port 9090) via UFW on Ubuntu. Defaults to
 # RFC-1918 private ranges; set to your homelab CIDR (e.g. 192.168.1.0/24) for
 # tighter scoping.

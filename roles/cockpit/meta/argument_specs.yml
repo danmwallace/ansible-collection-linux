@@ -69,3 +69,11 @@ argument_specs:
         elements: str
         required: false
         default: []
+      cockpit_remove_blanket_firewalld_service:
+        description:
+          - Disables the zone-wide C(cockpit) firewalld service (RedHat-family
+            hosts), so only the C(cockpit_allowed_cidrs) rich rules grant access to
+            port 9090. Acts only when C(cockpit_allowed_cidrs) is non-empty.
+        type: bool
+        required: false
+        default: true
