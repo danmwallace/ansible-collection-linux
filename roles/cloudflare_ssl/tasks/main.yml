@@ -17,6 +17,7 @@
     state: present
   become: true
   when: ansible_facts.os_family == "Debian"
+  register: _cloudflare_ssl_pkg_debian
 
 - name: Ensure certbot and the Cloudflare DNS plugin are installed (RedHat family)
   ansible.builtin.package:
@@ -24,6 +25,7 @@
     state: present
   become: true
   when: ansible_facts.os_family == "RedHat"
+  register: _cloudflare_ssl_pkg_redhat
 
 - name: Ensure the directory for Cloudflare credentials exists
   ansible.builtin.file:
@@ -65,4 +67,8 @@
     enabled: true
     state: started
   become: true
-  when: cloudflare_ssl_manage_renewal_timer
+  # In check mode on a fresh host the package was never actually installed, so
+  # the timer unit does not exist yet and systemd cannot find it.
+  when:
+    - cloudflare_ssl_manage_renewal_timer
+    - not (ansible_check_mode and (_cloudflare_ssl_pkg_debian is changed or _cloudflare_ssl_pkg_redhat is changed))
