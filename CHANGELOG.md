@@ -7,6 +7,19 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-26
+
+### Fixed
+
+- `cloudflare_ssl`: `--check` against a host that does not yet have `certbot`
+  installed failed at the renewal timer task (`Could not find the requested
+  service certbot-renew.timer: host`), because check mode only reports the
+  package install rather than performing it, so the unit file never exists for
+  the timer task to enable. The timer task is now skipped in check mode when
+  either package task would have newly installed. Real applies were unaffected
+  (the package is actually installed first); found during the live rollout
+  after 1.6.0.
+
 ## [1.6.0] - 2026-09-24
 
 ### Added

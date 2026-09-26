@@ -78,7 +78,10 @@ vault_cloudflare_ssl_api_token: "your-cloudflare-dns-edit-token"
    --domains <cloudflare_ssl_domains joined>`, writing the certificate to
    `/etc/letsencrypt/live/<cloudflare_ssl_domains[0]>/`.
 6. Enables and starts the packaged certbot renewal timer when
-   `cloudflare_ssl_manage_renewal_timer` is `true`.
+   `cloudflare_ssl_manage_renewal_timer` is `true`. In check mode against a
+   host where the package task would have newly installed certbot, this task
+   is skipped — the unit file does not exist yet for check mode to inspect,
+   so real applies still install the package first and enable the timer.
 
 ## Notes
 
