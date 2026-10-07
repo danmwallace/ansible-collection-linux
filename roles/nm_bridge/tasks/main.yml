@@ -1,0 +1,110 @@
+---
+# SPDX-License-Identifier: MIT
+- name: Validate bridge definitions
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - item.ipv4 is not defined or item.ipv4.method | default('disabled') != 'manual' or item.ipv4.address is defined
+    fail_msg: >-
+      Invalid nm_bridge_bridges entry '{{ item.name | default('(no name)') }}':
+      name must match [A-Za-z0-9][A-Za-z0-9_.-]*, and ipv4.address is required when ipv4.method is 'manual'.
+    quiet: true
+  loop: "{{ nm_bridge_bridges }}"
+  loop_control:
+    label: "{{ item.name | default('(no name)') }}"
+
+- name: Validate port definitions
+  ansible.builtin.assert:
+    that:
+      - item.1.name is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - item.1.type != 'vlan' or (item.1.parent is defined and item.1.vlan_id is defined)
+    fail_msg: >-
+      Invalid port '{{ item.1.name | default('(no name)') }}' on bridge '{{ item.0.name }}':
+      name must match [A-Za-z0-9][A-Za-z0-9_.-]*, and vlan ports need both parent and vlan_id.
+    quiet: true
+  loop: "{{ nm_bridge_bridges | subelements('ports', skip_missing=true) }}"
+  loop_control:
+    label: "{{ item.0.name }}/{{ item.1.name | default('(no name)') }}"
+
+# Snapshot which connections are live before anything is modified. A connection
+# that is active now must only ever be reapplied, never brought up again: on a
+# hypervisor, `nmcli con up` of an active bridge recreates the kernel device and
+# silently drops every libvirt tap that was attached to it.
+- name: Gather active NetworkManager connections
+  ansible.builtin.command:
+    argv: [nmcli, -t, -f, NAME, connection, show, --active]
+  register: nm_bridge_active_raw
+  changed_when: false
+  check_mode: false
+
+- name: Ensure bridge connection profiles are present
+  community.general.nmcli:
+    conn_name: "{{ item.name }}"
+    ifname: "{{ item.name }}"
+    type: bridge
+    stp: "{{ item.stp | default(true) }}"
+    forwarddelay: "{{ item.forward_delay | default(omit) }}"
+    priority: "{{ item.priority | default(32768) }}"
+    method4: "{{ item.ipv4.method | default('disabled') if item.ipv4 is defined else 'disabled' }}"
+    ip4: "{{ item.ipv4.address | default(omit) if item.ipv4 is defined else omit }}"
+    gw4: "{{ item.ipv4.gateway | default(omit) if item.ipv4 is defined else omit }}"
+    dns4: "{{ item.ipv4.dns | default(omit) if item.ipv4 is defined else omit }}"
+    method6: "{{ item.ipv6_method | default('disabled') }}"
+    autoconnect: true
+    state: present
+  loop: "{{ nm_bridge_bridges }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: nm_bridge_bridge_results
+
+- name: Ensure port connection profiles are present
+  community.general.nmcli:
+    conn_name: "{{ item.1.name }}"
+    ifname: "{{ item.1.interface }}"
+    type: "{{ item.1.type }}"
+    vlandev: "{{ item.1.parent | default(omit) }}"
+    vlanid: "{{ item.1.vlan_id | default(omit) }}"
+    slave_type: bridge
+    master: "{{ item.0.name }}"
+    autoconnect: true
+    state: present
+  loop: "{{ nm_bridge_bridges | subelements('ports', skip_missing=true) }}"
+  loop_control:
+    label: "{{ item.0.name }}/{{ item.1.name }}"
+  register: nm_bridge_port_results
+
+- name: Build the list of connections to reapply or activate
+  ansible.builtin.set_fact:
+    nm_bridge_reapply: >-
+      {{ (nm_bridge_bridge_results.results | selectattr('changed') | map(attribute='item.name') | list
+          + nm_bridge_port_results.results | selectattr('changed') | map(attribute='item.1.name') | list)
+         | select('in', nm_bridge_active_raw.stdout_lines) | list }}
+    nm_bridge_activate: >-
+      {{ (nm_bridge_bridges | map(attribute='name') | list
+          + nm_bridge_bridges | subelements('ports', skip_missing=true) | map(attribute='1.name') | list)
+         | reject('in', nm_bridge_active_raw.stdout_lines) | list }}
+
+- name: Ensure changed profiles are reapplied to their live devices
+  block:
+    - name: Reapply changed connection profiles in place
+      ansible.builtin.command:
+        argv: [nmcli, device, reapply, "{{ item }}"]
+      loop: "{{ nm_bridge_reapply }}"
+      changed_when: true
+      when: not ansible_check_mode
+  rescue:
+    - name: Explain the refused reapply
+      ansible.builtin.fail:
+        msg: >-
+          NetworkManager refused to reapply one of {{ nm_bridge_reapply | join(', ') }} in place.
+          The modified profile is already saved and takes effect at the next reboot. To apply it now,
+          schedule a maintenance window and run `nmcli con up <name>` yourself: on a hypervisor that
+          recreates the bridge and detaches every running guest's tap until each guest is re-attached
+          with `ip link set <vnetN> master <bridge>`.
+
+- name: Ensure inactive profiles are activated
+  ansible.builtin.command:
+    argv: [nmcli, connection, up, "{{ item }}"]
+  loop: "{{ nm_bridge_activate }}"
+  changed_when: true
+  when: not ansible_check_mode
