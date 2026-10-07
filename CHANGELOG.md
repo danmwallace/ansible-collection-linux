@@ -7,8 +7,18 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-09
+
 ### Added
 
+- `nm_bridge`: declare NetworkManager bridge connections and their ethernet or VLAN
+  ports from one `nm_bridge_bridges` list. Profiles are persisted with `nmcli con
+  modify` (via `community.general.nmcli`, so existing UUIDs survive) and applied
+  with `nmcli device reapply`; the role never runs `con up` on an active bridge,
+  because recreating the kernel device orphans every libvirt tap attached to it.
+  Written to capture srv01's hand-made `virbr0` (static management address) and
+  L2-only `vlan70` bridges after a DHCP lease failure on 2026-09-28 recreated
+  `virbr0` and took two guests offline.
 - `restic_backup`: a `restore` entry point (`include_role` with
   `tasks_from: restore`) restores the contents of a path in a named snapshot
   into a target directory through the role's own SSH alias and key. It skips
