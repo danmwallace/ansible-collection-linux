@@ -1,0 +1,103 @@
+---
+# SPDX-License-Identifier: MIT
+argument_specs:
+  main:
+    short_description: Declare NetworkManager bridge connections and their ethernet or VLAN ports, applied in place without recreating the bridge.
+    description:
+      - Persists each bridge and port profile with C(nmcli con modify) (via M(community.general.nmcli)),
+        matching by connection name so existing UUIDs survive.
+      - Profiles that were already active and changed are applied with C(nmcli device reapply), which
+        updates the live device without tearing it down. Re-creating a bridge would orphan every libvirt
+        tap attached to it, so the role never runs C(nmcli con up) on an active connection.
+      - Profiles that exist but are not active (a freshly provisioned host) are activated with C(nmcli con up).
+      - If NetworkManager refuses to reapply a property, the play fails and names the device; the modified
+        profile is already on disk and takes effect at the next reboot or a manual re-activation.
+    author:
+      - Dan Wallace [danmwallace]
+    options:
+      nm_bridge_bridges:
+        description: Bridge connections to manage. An empty list is a no-op.
+        type: list
+        elements: dict
+        required: false
+        default: []
+        options:
+          name:
+            description: Connection id, also used as the bridge interface name.
+            type: str
+            required: true
+          stp:
+            description: Enable Spanning Tree on the bridge.
+            type: bool
+            required: false
+            default: true
+          forward_delay:
+            description: STP forward delay in seconds. Left unmanaged when omitted.
+            type: int
+            required: false
+          priority:
+            description: >-
+              STP bridge priority. Always written, because M(community.general.nmcli) otherwise
+              imposes its own default of 128 and reports a change on every bridge NetworkManager
+              created with its default of 32768.
+            type: int
+            required: false
+            default: 32768
+          ipv4:
+            description: IPv4 configuration of the bridge itself. Omit for an L2-only bridge with no host address.
+            type: dict
+            required: false
+            options:
+              method:
+                description: NetworkManager IPv4 method.
+                type: str
+                required: false
+                default: disabled
+                choices: [disabled, auto, manual]
+              address:
+                description: Address in CIDR notation. Required when method is C(manual).
+                type: str
+                required: false
+              gateway:
+                description: Default gateway.
+                type: str
+                required: false
+              dns:
+                description: DNS servers.
+                type: list
+                elements: str
+                required: false
+          ipv6_method:
+            description: NetworkManager IPv6 method.
+            type: str
+            required: false
+            default: disabled
+            choices: [disabled, auto, manual, link-local, ignore]
+          ports:
+            description: Port connections enslaved to this bridge.
+            type: list
+            elements: dict
+            required: false
+            default: []
+            options:
+              name:
+                description: Connection id of the port profile.
+                type: str
+                required: true
+              type:
+                description: Port kind.
+                type: str
+                required: true
+                choices: [ethernet, vlan]
+              interface:
+                description: Device name the port profile binds to (for C(vlan), the VLAN device such as C(eth0.70)).
+                type: str
+                required: true
+              parent:
+                description: Parent device of a C(vlan) port. Required for C(vlan).
+                type: str
+                required: false
+              vlan_id:
+                description: 802.1Q VLAN id of a C(vlan) port. Required for C(vlan).
+                type: int
+                required: false
