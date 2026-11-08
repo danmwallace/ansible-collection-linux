@@ -1,9 +1,17 @@
 ---
 - name: Verify
   hosts: molecule
-  gather_facts: false
+  # vars.yml computes the prune weekday from ansible_date_time.
+  gather_facts: true
+  vars_files:
+    - vars.yml
   vars:
     restic_env: "set -a; . /etc/restic-backup/restic-backup.env; set +a;"
+  pre_tasks:
+    - name: Read the test NAS host key
+      ansible.builtin.slurp:
+        src: /tmp/molecule-nas-host-key
+      register: _molecule_host_key
   tasks:
     - name: Stat installed files
       ansible.builtin.stat:
@@ -96,6 +104,154 @@
     - name: Assert two snapshots exist
       ansible.builtin.assert:
         that: _count.stdout | int == 2
+
+    # --- restore entry point (tasks_from: restore) ---
+    - name: Read the latest snapshot ID
+      ansible.builtin.shell:
+        cmd: >-
+          {{ restic_env }} restic snapshots --json latest
+          | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["short_id"])'
+        executable: /bin/bash
+      register: _snap
+      changed_when: false
+
+    - name: Restore the whole snapshot path by ID
+      ansible.builtin.include_role:
+        name: danmwallace.linux.restic_backup
+        tasks_from: restore
+      vars:
+        restic_backup_restore_snapshot: "{{ _snap.stdout }}"
+        restic_backup_restore_path: /srv/app
+        restic_backup_restore_target: /tmp/restored-app
+
+    - name: List the restored files
+      ansible.builtin.command: find /tmp/restored-app -type f
+      register: _restored_all
+      changed_when: false
+
+    - name: Assert the path's contents landed directly in the target
+      ansible.builtin.assert:
+        that: _restored_all.stdout_lines | sort == ['/tmp/restored-app/keep.txt', '/tmp/restored-app/notes/n.txt']
+
+    - name: Read the restored file
+      ansible.builtin.slurp:
+        src: /tmp/restored-app/keep.txt
+      register: _restored_keep
+
+    - name: Assert the restored file matches
+      ansible.builtin.assert:
+        that: (_restored_keep.content | b64decode | trim) == 'keep-me'
+
+    - name: Restore a subset, owned by another user
+      ansible.builtin.include_role:
+        name: danmwallace.linux.restic_backup
+        tasks_from: restore
+      vars:
+        restic_backup_restore_snapshot: latest
+        restic_backup_restore_path: /srv/app
+        restic_backup_restore_target: /tmp/restored-subset
+        restic_backup_restore_includes:
+          - /notes
+        restic_backup_restore_owner: nobody
+
+    - name: List the restored subset with owners
+      ansible.builtin.command: find /tmp/restored-subset -mindepth 1 -printf '%P %u\n'
+      register: _restored_subset
+      changed_when: false
+
+    - name: Stat the subset target
+      ansible.builtin.stat:
+        path: /tmp/restored-subset
+      register: _subset_target
+
+    - name: Assert only the included path was restored, owned by nobody
+      ansible.builtin.assert:
+        that:
+          - _restored_subset.stdout_lines | sort == ['notes nobody', 'notes/n.txt nobody']
+          - _subset_target.stat.pw_name == 'nobody'
+
+    - name: Restore with an include that matches nothing
+      block:
+        - name: Run the restore expected to fail (empty)
+          ansible.builtin.include_role:
+            name: danmwallace.linux.restic_backup
+            tasks_from: restore
+          vars:
+            restic_backup_restore_snapshot: latest
+            restic_backup_restore_path: /srv/app
+            restic_backup_restore_target: /tmp/restored-nothing
+            # The original absolute path: wrong, includes are relative to the path.
+            restic_backup_restore_includes:
+              - /srv/app/notes
+        - name: Record that the empty restore was not caught
+          ansible.builtin.set_fact:
+            _empty_failed: false
+      rescue:
+        - name: Record that the empty restore failed the play
+          ansible.builtin.set_fact:
+            _empty_failed: true
+            _empty_msg: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Assert an empty restore fails with a hint about includes
+      ansible.builtin.assert:
+        that:
+          - _empty_failed
+          - "'restored nothing' in _empty_msg"
+
+    - name: Restore a snapshot that does not exist
+      block:
+        - name: Run the restore expected to fail (bogus)
+          ansible.builtin.include_role:
+            name: danmwallace.linux.restic_backup
+            tasks_from: restore
+          vars:
+            restic_backup_restore_snapshot: deadbeef
+            restic_backup_restore_path: /srv/app
+            restic_backup_restore_target: /tmp/restored-bogus
+        - name: Record that the bogus restore was not caught
+          ansible.builtin.set_fact:
+            _bogus_failed: false
+      rescue:
+        - name: Record that the bogus restore failed the play
+          ansible.builtin.set_fact:
+            _bogus_failed: true
+            _bogus_msg: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Assert a missing snapshot fails with restic's reason
+      ansible.builtin.assert:
+        that:
+          - _bogus_failed
+          - "'deadbeef' in _bogus_msg"
+
+    - name: Restore without naming a snapshot
+      block:
+        - name: Run the restore expected to fail (unnamed)
+          ansible.builtin.include_role:
+            name: danmwallace.linux.restic_backup
+            tasks_from: restore
+          vars:
+            restic_backup_restore_path: /srv/app
+            restic_backup_restore_target: /tmp/restored-unnamed
+        - name: Record that the unnamed restore was not caught
+          ansible.builtin.set_fact:
+            _unnamed_failed: false
+      rescue:
+        - name: Record that the unnamed restore failed the play
+          ansible.builtin.set_fact:
+            _unnamed_failed: true
+            _unnamed_msg: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Stat the unnamed restore's target
+      ansible.builtin.stat:
+        path: /tmp/restored-unnamed
+      register: _unnamed_target
+
+    - name: Assert a restore without a snapshot is refused before touching anything
+      ansible.builtin.assert:
+        that:
+          - _unnamed_failed
+          - "'restic_backup_restore_snapshot' in _unnamed_msg"
+          - not _unnamed_target.stat.exists
 
     - name: Read the rendered service unit and script
       ansible.builtin.slurp:
@@ -192,3 +348,19 @@
     - name: Assert the snapshot directory is excluded
       ansible.builtin.assert:
         that: "'/srv/app/.restic-backup-snapshot' in (_excludes.content | b64decode).splitlines()"
+
+    # --- restic_backup_timer_enabled: false (a reinstalled host before its restore) ---
+    - name: Re-apply the role with the timer disabled
+      ansible.builtin.include_role:
+        name: danmwallace.linux.restic_backup
+      vars:
+        restic_backup_timer_enabled: false
+
+    - name: Read the timer state  # noqa command-instead-of-module
+      ansible.builtin.command: systemctl show -p UnitFileState -p ActiveState --value restic-backup.timer
+      register: _timer_off
+      changed_when: false
+
+    - name: Assert the timer is installed but disabled and stopped
+      ansible.builtin.assert:
+        that: _timer_off.stdout_lines | sort == ['disabled', 'inactive']

@@ -80,6 +80,8 @@
           set -e
           mkdir -p /srv/app/data/profiles/a /srv/app/data/profiles/b /srv/app/skip
           echo keep-me > /srv/app/keep.txt
+          mkdir -p /srv/app/notes
+          echo note-me > /srv/app/notes/n.txt
           echo skip-me > /srv/app/skip/skipped.txt
           for d in /srv/app/data /srv/app/data/profiles/a /srv/app/data/profiles/b; do
             sqlite3 "$d/state.db" "create table if not exists t(v text); insert into t values('$d');"
