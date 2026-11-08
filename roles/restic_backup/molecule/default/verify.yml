@@ -1,10 +1,10 @@
 ---
 - name: Verify
   hosts: molecule
-  # vars.yml computes the prune weekday from ansible_date_time.
+  # vars/role.yml computes the prune weekday from ansible_date_time.
   gather_facts: true
   vars_files:
-    - vars.yml
+    - vars/role.yml
   vars:
     restic_env: "set -a; . /etc/restic-backup/restic-backup.env; set +a;"
   pre_tasks:
@@ -131,7 +131,13 @@
 
     - name: Assert the path's contents landed directly in the target
       ansible.builtin.assert:
-        that: _restored_all.stdout_lines | sort == ['/tmp/restored-app/keep.txt', '/tmp/restored-app/notes/n.txt']
+        # latest also holds after-snapshot.txt: the fake btrfs wrote it into the
+        # live tree during the first backup, so the second one picked it up.
+        that:
+          - "'/tmp/restored-app/keep.txt' in _restored_all.stdout_lines"
+          - "'/tmp/restored-app/notes/n.txt' in _restored_all.stdout_lines"
+          - _restored_all.stdout_lines | select('search', '^/tmp/restored-app/srv') | list | length == 0
+        fail_msg: "restored: {{ _restored_all.stdout_lines | sort }}"
 
     - name: Read the restored file
       ansible.builtin.slurp:
@@ -169,6 +175,7 @@
         that:
           - _restored_subset.stdout_lines | sort == ['notes nobody', 'notes/n.txt nobody']
           - _subset_target.stat.pw_name == 'nobody'
+        fail_msg: "restored: {{ _restored_subset.stdout_lines | sort }}, target owner {{ _subset_target.stat.pw_name }}"
 
     - name: Restore with an include that matches nothing
       block:
@@ -364,3 +371,4 @@
     - name: Assert the timer is installed but disabled and stopped
       ansible.builtin.assert:
         that: _timer_off.stdout_lines | sort == ['disabled', 'inactive']
+        fail_msg: "timer: {{ _timer_off.stdout_lines }}"

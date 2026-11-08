@@ -7,6 +7,22 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Added
+
+- `restic_backup`: a `restore` entry point (`include_role` with
+  `tasks_from: restore`) restores the contents of a path in a named snapshot
+  into a target directory through the role's own SSH alias and key. It skips
+  the `security.selinux` xattr and relabels with `restorecon` instead of
+  switching SELinux to permissive, can `chown -R` the result, and fails when
+  restic fails or when the restore matched no files (restic exits 0 then).
+  Covered by the molecule scenario: path mapping, a subset restore with an
+  owner, an include that matches nothing, a missing snapshot, and a restore
+  with no snapshot named.
+- `restic_backup`: `restic_backup_timer_enabled` (default `true`). `false`
+  installs the units with the timer disabled and stopped, for a reinstalled
+  host whose home has not been restored yet.
+- `restic_backup` README: "Restoring" and "Reinstalling a host".
+
 ## [1.6.1] - 2026-09-26
 
 ### Fixed

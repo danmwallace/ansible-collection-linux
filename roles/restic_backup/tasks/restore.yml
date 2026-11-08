@@ -1,0 +1,118 @@
+---
+# SPDX-License-Identifier: MIT
+# Entry point: include_role with tasks_from: restore. Uses the same role
+# variables as the main tasks, which must already have run on this host: they
+# write the SSH alias, key and pinned host key that reach the repository.
+- name: Assert the restore settings are present
+  ansible.builtin.assert:
+    that:
+      - restic_backup_restore_snapshot | length > 0
+      - restic_backup_restore_path is match('/')
+      - restic_backup_restore_target is match('/')
+      - restic_backup_password | length > 0
+    fail_msg: >-
+      Set restic_backup_restore_snapshot (a snapshot ID from restic snapshots,
+      or "latest"), an absolute restic_backup_restore_path (and
+      restic_backup_restore_target if it differs), and restic_backup_password.
+    quiet: true
+
+- name: Check whether the restic repository can be opened
+  ansible.builtin.command:
+    cmd: restic cat config
+  environment: "{{ _restic_backup_env }}"
+  register: _restic_backup_restore_repo
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only
+  no_log: true
+
+- name: Fail when the repository cannot be opened
+  ansible.builtin.fail:
+    msg: >-
+      restic cannot open {{ restic_backup_repository }} (exit code
+      {{ _restic_backup_restore_repo.rc }}):
+      {{ _restic_backup_restore_repo.stderr | default('') | trim }}
+      Apply this role's main tasks to the host first (they write the SSH alias
+      and key), and check the NAS has authorised its key.
+  when: _restic_backup_restore_repo.rc != 0
+
+# restic's own restore of the security.selinux xattr is refused by the policy
+# for most targets; skipping it and relabelling afterwards (below) gives the
+# labels the target's location should have, with SELinux enforcing throughout.
+- name: Restore the snapshot path into the target
+  ansible.builtin.command:
+    argv: >-
+      {{ ['restic', 'restore', '--json',
+          restic_backup_restore_snapshot ~ ':' ~ restic_backup_restore_path,
+          '--target', restic_backup_restore_target,
+          '--exclude-xattr', 'security.selinux']
+         + (restic_backup_restore_includes | map('regex_replace', '^', '--include=') | list) }}
+  environment: "{{ _restic_backup_env }}"
+  register: _restic_backup_restore
+  changed_when: >-
+    _restic_backup_restore.rc == 0 and
+    (_restic_backup_restore.stdout_lines
+     | select('search', '"message_type":"summary"')
+     | map('from_json') | map(attribute='files_restored', default=0) | sum) > 0
+  failed_when: false
+  no_log: true
+
+- name: Fail when restic reports an error
+  ansible.builtin.fail:
+    msg: >-
+      restic restore of {{ restic_backup_restore_snapshot }}:{{ restic_backup_restore_path }}
+      failed (exit code {{ _restic_backup_restore.rc }}):
+      {{ _restic_backup_restore.stderr | default('') | trim }}
+  when: _restic_backup_restore.rc != 0
+
+- name: Read the restore summary
+  ansible.builtin.set_fact:
+    _restic_backup_restore_summary: >-
+      {{ ((_restic_backup_restore.stdout_lines
+           | select('search', '"message_type":"summary"')
+           | map('from_json') | list) + [{}]) | first }}
+
+# restic exits 0 when the path or the includes match nothing, so an include
+# written as the original absolute path would otherwise "succeed" empty.
+- name: Fail when the restore matched nothing
+  ansible.builtin.fail:
+    msg: >-
+      restic restored nothing from {{ restic_backup_restore_snapshot }}:{{ restic_backup_restore_path }}.
+      Check the path exists in that snapshot (restic ls {{ restic_backup_restore_snapshot }}
+      {{ restic_backup_restore_path }}), and that restic_backup_restore_includes are
+      relative to it (/Notebook, not {{ restic_backup_restore_path }}/Notebook).
+  when: (_restic_backup_restore_summary.total_files | default(0) | int) == 0
+
+- name: Show the restore summary
+  ansible.builtin.debug:
+    msg: >-
+      Restored {{ _restic_backup_restore_summary.files_restored | default(0) }} of
+      {{ _restic_backup_restore_summary.total_files }} files
+      ({{ _restic_backup_restore_summary.bytes_restored | default(0) | filesizeformat }})
+      into {{ restic_backup_restore_target }};
+      {{ _restic_backup_restore_summary.files_skipped | default(0) }} were already up to date.
+
+# The target already exists (restic created it) and keeps its restored mode,
+# which for a home directory must stay 0700, so no mode is set here.
+- name: Ensure the restored tree is owned by the requested user  # noqa risky-file-permissions
+  ansible.builtin.file:
+    path: "{{ restic_backup_restore_target }}"
+    state: directory
+    owner: "{{ restic_backup_restore_owner }}"
+    group: "{{ restic_backup_restore_group }}"
+    recurse: true
+  when: restic_backup_restore_owner | length > 0
+
+- name: Check whether SELinux is enabled
+  ansible.builtin.command:
+    cmd: selinuxenabled
+  register: _restic_backup_restore_selinux
+  changed_when: false
+  failed_when: false
+
+- name: Ensure the restored tree carries its default SELinux labels
+  ansible.builtin.command:
+    argv: [restorecon, -R, "{{ restic_backup_restore_target }}"]
+  # Relabels what was just restored; nothing restored means nothing to relabel.
+  changed_when: _restic_backup_restore is changed
+  when: _restic_backup_restore_selinux.rc == 0

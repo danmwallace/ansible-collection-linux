@@ -47,3 +47,24 @@ restic_backup_kuma_push_url: ""
 
 # Add ConditionACPower=true so the service is skipped on battery (laptops)
 restic_backup_require_ac_power: false
+
+# false installs the units but leaves the timer disabled and stopped. For a
+# reinstalled host before its restore: a run then would back up the near-empty
+# new home and make it the repository's "latest".
+restic_backup_timer_enabled: true
+
+# Restore (include_role tasks_from: restore); see README "Restoring".
+# Snapshot ID (from restic snapshots) or "latest". Required: no default, so a
+# restore always names what it restores.
+restic_backup_restore_snapshot: ""
+# Path inside the snapshot whose contents are restored, e.g. /home/dwallace
+restic_backup_restore_path: ""
+# Where those contents land; the same path by default
+restic_backup_restore_target: "{{ restic_backup_restore_path }}"
+# restic --include patterns, relative to restic_backup_restore_path
+# (e.g. /Notebook); empty restores everything under it
+restic_backup_restore_includes: []
+# chown -R the target to this user (and group, default the same name) after
+# the restore. Empty keeps restic's restored numeric owners.
+restic_backup_restore_owner: ""
+restic_backup_restore_group: "{{ restic_backup_restore_owner }}"
