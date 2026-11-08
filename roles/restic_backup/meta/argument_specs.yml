@@ -136,3 +136,63 @@ argument_specs:
         type: str
         default: ""
         no_log: true
+      restic_backup_timer_enabled:
+        description:
+          - Enable and start the timer. false installs the units but leaves the timer disabled and stopped.
+          - For a reinstalled host before its home is restored, where a run would back up the near-empty
+            new home and make it the repository's latest snapshot.
+        type: bool
+        default: true
+  restore:
+    short_description: Restore a path from a restic snapshot into a target directory.
+    description:
+      - Restores the contents of restic_backup_restore_path in restic_backup_restore_snapshot into
+        restic_backup_restore_target, through the SSH alias and key the main tasks set up.
+      - Skips the security.selinux xattr and relabels the target with restorecon afterwards, so SELinux
+        stays enforcing. Optionally chowns the restored tree.
+      - Fails when restic fails, and when the restore matched no files (restic itself exits 0 then).
+    author:
+      - Dan Wallace [danmwallace]
+    options:
+      restic_backup_password:
+        description: Repository encryption password. Supply from vault.
+        type: str
+        required: true
+        no_log: true
+      restic_backup_nas_base_path:
+        description: Remote directory containing one repository directory per host.
+        type: str
+        default: /mnt/ssd-mirror/backups/restic
+      restic_backup_repository:
+        description: restic repository URL. The host alias restic-backup-nas is defined by the main tasks.
+        type: str
+        default: "sftp:restic-backup-nas:{{ restic_backup_nas_base_path }}/{{ inventory_hostname }}"
+      restic_backup_restore_snapshot:
+        description:
+          - Snapshot ID (from restic snapshots) or latest. Required; empty fails before anything is touched.
+          - Prefer an ID when the host's timer may have run since the backup you mean to restore.
+        type: str
+        default: ""
+      restic_backup_restore_path:
+        description: Absolute path inside the snapshot whose contents are restored, for example /home/dwallace.
+        type: str
+        default: ""
+      restic_backup_restore_target:
+        description: Absolute directory the contents land in. Defaults to restic_backup_restore_path.
+        type: str
+        default: "{{ restic_backup_restore_path }}"
+      restic_backup_restore_includes:
+        description:
+          - restic --include patterns, relative to restic_backup_restore_path (/Notebook, not
+            /home/dwallace/Notebook). Empty restores everything under the path.
+        type: list
+        elements: str
+        default: []
+      restic_backup_restore_owner:
+        description: User to chown the restored tree to. Empty keeps the numeric owners restic restored.
+        type: str
+        default: ""
+      restic_backup_restore_group:
+        description: Group for the chown. Defaults to restic_backup_restore_owner.
+        type: str
+        default: "{{ restic_backup_restore_owner }}"

@@ -31,7 +31,9 @@ mains power or reachable to the NAS — see
 - `restic`, `sqlite` (if `restic_backup_sqlite_dbs` is used) and
   `btrfs-progs` (if `restic_backup_btrfs_snapshot_subvolumes` is used) are
   installed by the role itself (via the `package` module); no
-  pre-installation needed
+  pre-installation needed. On an image-based host (bootc, rpm-ostree)
+  the `package` module cannot install anything, so the image must already
+  ship them; the task is then a no-op.
 
 ## Role Variables
 
@@ -61,6 +63,18 @@ mains power or reachable to the NAS — see
 | `restic_backup_randomized_delay` | str | no | `30m` | systemd `RandomizedDelaySec` for the timer. |
 | `restic_backup_require_ac_power` | bool | no | `false` | Add `ConditionACPower=true` to the service so runs are skipped on battery. For laptops. |
 | `restic_backup_kuma_push_url` | str | no | `""` | Uptime Kuma push URL, without a query string. Pinged only after a fully successful run. Empty disables it. **Supply from vault.** |
+| `restic_backup_timer_enabled` | bool | no | `true` | Enable and start the timer. `false` installs the units but leaves the timer disabled and stopped; see [Reinstalling a host](#reinstalling-a-host). |
+
+Restore variables, read only by `tasks_from: restore` (see [Restoring](#restoring)):
+
+| Variable | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `restic_backup_restore_snapshot` | str | yes | `""` | Snapshot ID (from `restic snapshots`) or `latest`. Empty fails before anything is touched. |
+| `restic_backup_restore_path` | str | yes | `""` | Absolute path inside the snapshot whose **contents** are restored, e.g. `/home/dwallace`. |
+| `restic_backup_restore_target` | str | no | the path | Absolute directory the contents land in. |
+| `restic_backup_restore_includes` | list of str | no | `[]` | `restic --include` patterns, **relative to the path** (`/Notebook`, not `/home/dwallace/Notebook`). Empty restores everything under it. |
+| `restic_backup_restore_owner` | str | no | `""` | `chown -R` the target to this user afterwards. Empty keeps the numeric owners restic restored (right when the UID is unchanged). |
+| `restic_backup_restore_group` | str | no | the owner | Group for that `chown`. |
 
 ## Dependencies
 
@@ -203,6 +217,57 @@ host's dedicated SSH public key — the file this role writes at
 preview) before the role's first run against a new host; if it hasn't been
 run yet, step 10 above fails with the exact public key you need to
 authorise.
+
+## Restoring
+
+`tasks_from: restore` restores the contents of one path in one snapshot into
+a target directory, through the SSH alias and key the main tasks set up, so
+the main tasks must have run on the host first (same variables):
+
+```yaml
+- hosts: frmwrk
+  become: true
+  tasks:
+    - name: Restore the home directory from the pre-wipe snapshot
+      ansible.builtin.include_role:
+        name: danmwallace.linux.restic_backup
+        tasks_from: restore
+      vars:
+        restic_backup_restore_snapshot: 4f2a91c0   # restic snapshots
+        restic_backup_restore_path: /home/dwallace
+```
+
+It runs `restic restore <snapshot>:<path> --target <target>`, so
+`/home/dwallace/Notebook` in the snapshot lands at
+`<target>/Notebook`, not `<target>/home/dwallace/Notebook`. It skips the
+`security.selinux` xattr and runs `restorecon -R` on the target afterwards,
+so SELinux stays enforcing throughout and files get the labels their new
+location should have. It fails when restic exits non-zero, and when the
+restore matched no files at all: restic itself exits 0 then, which is how a
+mistyped include (an absolute original path, say) would otherwise pass as
+a successful empty restore. Files already identical in the target are
+skipped, so a re-run after an interruption only fetches what is missing.
+
+### Reinstalling a host
+
+A reinstalled host gets a new SSH identity, and its backup timer must not
+run before the restore: the first run would back up the near-empty new home
+and make it `latest`. In order:
+
+1. On the old install, run a last backup and note its ID:
+   `systemctl start restic-backup.service`, then `restic snapshots` (as in
+   the runbook below).
+2. After the reinstall, apply the role with
+   `restic_backup_timer_enabled: false`. It fails at the repository check
+   and prints the new public key.
+3. Authorise that key on the NAS ([NAS bootstrap](#nas-bootstrap)); the
+   repository directory and its snapshots are untouched.
+4. Re-apply with the timer still disabled, then `tasks_from: restore` with
+   the snapshot ID from step 1.
+5. Re-apply with `restic_backup_timer_enabled: true`.
+
+Restore before anyone logs in to the desktop, so no application is writing
+into the home directory while it is restored.
 
 ## Restore runbook
 
