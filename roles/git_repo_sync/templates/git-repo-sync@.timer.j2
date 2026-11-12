@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# Also sync {{ item.name }} every {{ git_repo_sync_minutes }} minutes. Persistent: a run
+# missed while the machine slept happens right after it wakes.
+[Unit]
+Description=Sync the {{ item.name }} git clone every {{ git_repo_sync_minutes }} minutes
+
+[Timer]
+OnCalendar=*:0/{{ git_repo_sync_minutes }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -7,7 +7,8 @@
     git_repo_sync_git_name: Dev Example
     git_repo_sync_git_email: dev@example.invalid
     git_repo_sync_repos:
-      - { name: vault, github: owner/vault, dest: /home/dev/vault, mode: sync, writable: true }
+      - { name: vault, github: owner/vault, dest: /home/dev/vault, mode: sync, writable: true,
+          interval: 15min, git_exclude: [".syncthing.*.tmp", ".stversions/"] }
       - { name: config, github: owner/config, dest: ~/.local/share/config, mode: pull, after_pull: "echo \"applied\" > /tmp/applied" }
       - { name: existing, github: owner/existing, dest: /home/dev/existing, mode: none }
   tasks:

@@ -6,7 +6,11 @@
       - item.github is match('^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$')
       - item.dest | length > 0
       - item.mode in ['pull', 'sync', 'none']
-    fail_msg: "git_repo_sync_repos entry {{ item.name | default('?') }} needs name, github (owner/repo), dest and mode (pull|sync|none)"
+      - item.interval is not defined or (item.interval is match('^[0-9]+min$') and (item.interval[:-3] | int) in range(1, 60))
+      - item.git_exclude is not defined or item.git_exclude is sequence
+    fail_msg: >-
+      git_repo_sync_repos entry {{ item.name | default('?') }} needs name, github (owner/repo), dest and
+      mode (pull|sync|none); interval is <1-59>min; git_exclude is a list
     quiet: true
   loop: "{{ git_repo_sync_repos }}"
   loop_control:
@@ -29,11 +33,17 @@
   ansible.builtin.set_fact:
     git_repo_sync_home: "{{ ansible_facts.getent_passwd[git_repo_sync_user][4] }}"
 
+# Facts outlive the role on a host, so lists built up below start empty on every run.
+- name: Start this run's lists empty
+  ansible.builtin.set_fact:
+    git_repo_sync_list: []
+    git_repo_sync_to_switch: []
+
 # systemd does not expand ~ in an EnvironmentFile, so every dest is made absolute once.
 - name: Expand ~ in each repo's dest
   ansible.builtin.set_fact:
     git_repo_sync_list: >-
-      {{ git_repo_sync_list | default([]) + [item | combine({'dest': item.dest | regex_replace('^~(?=/|$)', git_repo_sync_home)})] }}
+      {{ git_repo_sync_list + [item | combine({'dest': item.dest | regex_replace('^~(?=/|$)', git_repo_sync_home)})] }}
   loop: "{{ git_repo_sync_repos }}"
   loop_control:
     label: "{{ item.name }}"
@@ -124,7 +134,7 @@
 
     - name: List existing clones of the same repo that don't use their alias yet
       ansible.builtin.set_fact:
-        git_repo_sync_to_switch: "{{ (git_repo_sync_to_switch | default([])) + [item.item.item] }}"
+        git_repo_sync_to_switch: "{{ git_repo_sync_to_switch + [item.item.item] }}"
       loop: "{{ git_repo_sync_origins.results | selectattr('config_value', 'defined') | list }}"
       loop_control:
         label: "{{ item.item.item.name }}"
@@ -140,7 +150,7 @@
         cmd: timeout 20 git ls-remote --exit-code git@github-{{ item.name }}:{{ item.github }}.git HEAD
       environment:
         GIT_SSH_COMMAND: ssh -o BatchMode=yes
-      loop: "{{ git_repo_sync_to_switch | default([]) }}"
+      loop: "{{ git_repo_sync_to_switch }}"
       loop_control:
         label: "{{ item.name }}"
       register: git_repo_sync_alias_check
@@ -195,6 +205,19 @@
              | select | first | default('nothing') }}
       when: not ansible_check_mode and git_repo_sync_refused | length > 0
 
+    - name: Ensure each clone's git excludes are in place
+      ansible.builtin.blockinfile:
+        path: "{{ item.item.dest }}/.git/info/exclude"
+        create: true
+        mode: "0644"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync"
+        block: "{{ item.item.git_exclude | join('\n') }}"
+      loop: >-
+        {{ (git_repo_sync_existing.results if ansible_check_mode else git_repo_sync_after.results)
+           | selectattr('stat.exists') | selectattr('item.git_exclude', 'defined') | list }}
+      loop_control:
+        label: "{{ item.item.name }}"
+
     - name: Ensure the user unit and settings directories exist
       ansible.builtin.file:
         path: "{{ item }}"
@@ -202,6 +225,7 @@
         mode: "0700"
       loop:
         - "{{ git_repo_sync_home }}/.config/systemd/user/default.target.wants"
+        - "{{ git_repo_sync_home }}/.config/systemd/user/timers.target.wants"
         - "{{ git_repo_sync_home }}/.config/git-repo-sync"
 
     - name: Ensure the login sync unit template is installed
@@ -239,3 +263,34 @@
       loop: "{{ git_repo_sync_list | selectattr('mode', 'eq', 'none') | list }}"
       loop_control:
         label: "{{ item.name }}"
+
+    - name: Ensure repos with an interval also sync on a timer
+      ansible.builtin.template:
+        src: git-repo-sync@.timer.j2
+        dest: "{{ git_repo_sync_home }}/.config/systemd/user/git-repo-sync@{{ item.name }}.timer"
+        mode: "0644"
+      loop: "{{ git_repo_sync_list | selectattr('interval', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      vars:
+        git_repo_sync_minutes: "{{ item.interval[:-3] | int }}"
+
+    - name: Ensure each timer is enabled (what systemctl --user enable does, without a session)
+      ansible.builtin.file:
+        src: "../git-repo-sync@{{ item.name }}.timer"
+        dest: "{{ git_repo_sync_home }}/.config/systemd/user/timers.target.wants/git-repo-sync@{{ item.name }}.timer"
+        state: link
+        force: true
+      loop: "{{ git_repo_sync_list | selectattr('interval', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Ensure repos without an interval have no timer
+      ansible.builtin.file:
+        path: "{{ git_repo_sync_home }}/.config/systemd/user/{{ item[1] }}git-repo-sync@{{ item[0] }}.timer"
+        state: absent
+      loop: >-
+        {{ git_repo_sync_list | rejectattr('interval', 'defined') | map(attribute='name')
+           | product(['', 'timers.target.wants/']) | list }}
+      loop_control:
+        label: "{{ item[1] }}git-repo-sync@{{ item[0] }}.timer"

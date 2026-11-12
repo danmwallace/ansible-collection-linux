@@ -46,7 +46,7 @@ It never forces anything:
 | Variable | Default | Meaning |
 |---|---|---|
 | `git_repo_sync_user` | `ansible_user_id` | owner of the clones, keys and units |
-| `git_repo_sync_repos` | `[]` | list of `{name, github, dest, mode, writable, after_pull}` |
+| `git_repo_sync_repos` | `[]` | list of `{name, github, dest, mode, writable, after_pull, interval, git_exclude}` |
 | `git_repo_sync_git_name`, `git_repo_sync_git_email` | `""` | identity for `sync` clones' commits |
 | `git_repo_sync_github_host_key` | GitHub's ed25519 key | pinned in `~/.ssh/known_hosts` |
 | `git_repo_sync_script` | `/usr/local/libexec/git-repo-sync` | where the login script goes |
@@ -67,6 +67,15 @@ It never forces anything:
           - { name: claude-config, github: danmwallace/claude-config, dest: ~/.local/share/claude-config,
               mode: pull, after_pull: "~/.local/share/claude-config/apply" }
 ```
+
+### Optional per repo
+
+- `interval: 15min` (1–59 minutes) also runs the sync on a user timer,
+  `OnCalendar=*:0/15` with `Persistent=true`, so a run missed while the machine
+  slept happens right after it wakes. Without it, the sync runs only at login.
+- `git_exclude: [patterns]` adds a managed block to the clone's
+  `.git/info/exclude` (local, never committed), e.g. Syncthing's temporary files
+  when the clone also lives in a Syncthing folder.
 
 ## Gotchas
 
