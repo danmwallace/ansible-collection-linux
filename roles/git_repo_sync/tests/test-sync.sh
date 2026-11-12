@@ -112,6 +112,47 @@ test_after_pull_runs_only_after_pull() {
     [ ! -e "$T/ran" ]
 }
 
+test_sync_without_git_identity() {
+    # A fresh laptop has no user.name/user.email: the sync must still commit.
+    setup
+    printf 'task\n' > "$T/here/task.md"
+    env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL \
+        PATH="$BIN:/usr/bin:/bin" bash "$script" obsidian "$T/here" sync || return 1
+    [ "$(git -C "$T/origin.git" rev-list --count main)" = 2 ] &&
+        git -C "$T/origin.git" log -1 --format=%ae main | grep -q '@'
+}
+
+test_failed_commit_restores_and_notifies() {
+    setup
+    printf 'task\n' > "$T/here/task.md"
+    printf '#!/bin/sh\nexit 1\n' > "$T/here/.git/hooks/pre-commit"; chmod +x "$T/here/.git/hooks/pre-commit"
+    sync obsidian "$T/here" sync; rc=$?
+    [ "$rc" -eq 0 ] && [ -z "$(git -C "$T/here" diff --cached --name-only)" ] && [ -f "$T/here/task.md" ] &&
+        [ "$(wc -l < "$NOTE")" -eq 1 ] && [ "$(git -C "$T/origin.git" rev-list --count main)" = 1 ]
+}
+
+test_sync_skips_cherry_pick_in_progress() {
+    setup
+    git -C "$T/here" checkout -q -b side
+    printf 'side\n' > "$T/here/note.md"; git -C "$T/here" commit -qam side
+    git -C "$T/here" checkout -q main
+    printf 'main\n' > "$T/here/note.md"; git -C "$T/here" commit -qam main
+    git -C "$T/here" cherry-pick side >/dev/null 2>&1   # conflicts
+    [ -e "$T/here/.git/CHERRY_PICK_HEAD" ] || return 1
+    sync obsidian "$T/here" sync || return 1
+    [ "$(git -C "$T/origin.git" rev-list --count main)" = 1 ] && [ -e "$T/here/.git/CHERRY_PICK_HEAD" ]
+}
+
+test_sync_skips_unmerged_index() {
+    setup
+    printf 'stashed\n' > "$T/here/note.md"; git -C "$T/here" stash -q
+    printf 'committed\n' > "$T/here/note.md"; git -C "$T/here" commit -qam local
+    git -C "$T/here" stash pop >/dev/null 2>&1           # conflicts, no in-progress marker
+    [ -n "$(git -C "$T/here" ls-files -u)" ] || return 1
+    sync obsidian "$T/here" sync || return 1
+    ! git -C "$T/origin.git" grep -q '<<<<<<<' main -- note.md
+}
+
 test_bad_usage() {
     setup
     sync obsidian "$T/here" bogus >/dev/null 2>&1; [ $? -eq 2 ] || return 1
@@ -120,7 +161,8 @@ test_bad_usage() {
 
 for t in test_pull_fast_forward test_pull_skips_dirty test_sync_commits_pulls_pushes test_sync_nothing_to_do_is_quiet \
          test_sync_conflict_aborts_and_notifies test_offline_is_quiet test_sync_skips_rebase_in_progress \
-         test_after_pull_runs_only_after_pull test_bad_usage; do
+         test_after_pull_runs_only_after_pull test_sync_without_git_identity test_failed_commit_restores_and_notifies \
+         test_sync_skips_cherry_pick_in_progress test_sync_skips_unmerged_index test_bad_usage; do
     check "$t" "$t"
 done
 echo "$pass passed"

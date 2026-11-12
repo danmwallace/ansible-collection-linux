@@ -28,6 +28,8 @@
           test "$(git -C $h/existing config --get remote.origin.url)" = git@github-existing:owner/existing.git
           test "$(cat $h/existing/README.md)" = "local edit"
           test "$(stat -c %U $h/vault/README.md)" = dev
+          test "$(git -C $h/vault config --get user.email)" = dev@example.invalid
+          test "$(git -C $h/vault config --get user.name)" = "Dev Example"
         executable: /bin/bash
       changed_when: false
 
@@ -63,8 +65,45 @@
         - name: Check the message names the repo and the read-write register command
           ansible.builtin.assert:
             that:
-              - "'Could not clone owner/missing' in ansible_failed_result.msg"
-              - "'gh repo deploy-key add - --repo owner/missing' in ansible_failed_result.msg"
+              - >-
+                "Can't reach owner/missing" in ansible_failed_result.msg
               - "'--allow-write' in ansible_failed_result.msg"
-              - "'ssh-ed25519 ' in ansible_failed_result.msg"
+              - "'gh repo deploy-key add /home/dev/.ssh/deploy_missing_ed25519.pub' in ansible_failed_result.msg"
+              - "'<<<' not in ansible_failed_result.msg"
             quiet: true
+
+- name: Verify an existing clone keeps its origin when its new key isn't registered yet
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply the role to a clone whose alias can't reach origin
+      block:
+        - name: Include git_repo_sync with the unreachable existing clone
+          ansible.builtin.include_role:
+            name: danmwallace.linux.git_repo_sync
+          vars:
+            git_repo_sync_user: dev
+            git_repo_sync_repos:
+              - { name: existing2, github: owner/existing2, dest: /home/dev/existing2, mode: sync, writable: true }
+        - name: Fail if the role carried on
+          ansible.builtin.fail:
+            msg: the role should have stopped with existing2's key to register
+      rescue:
+        - name: Check the message lists existing2's key
+          ansible.builtin.assert:
+            that:
+              - "'owner/existing2' in ansible_failed_result.msg"
+              - "'gh repo deploy-key add /home/dev/.ssh/deploy_existing2_ed25519.pub' in ansible_failed_result.msg"
+            quiet: true
+
+    - name: Read existing2's origin
+      ansible.builtin.command:
+        cmd: git -C /home/dev/existing2 config --get remote.origin.url
+      register: git_repo_sync_verify_origin2
+      changed_when: false
+
+    - name: Check existing2 still uses the origin that works
+      ansible.builtin.assert:
+        that:
+          - git_repo_sync_verify_origin2.stdout == 'git@github.com:owner/existing2.git'
+        quiet: true

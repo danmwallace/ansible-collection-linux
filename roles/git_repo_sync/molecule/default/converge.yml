@@ -4,6 +4,8 @@
   gather_facts: true
   vars:
     git_repo_sync_user: dev
+    git_repo_sync_git_name: Dev Example
+    git_repo_sync_git_email: dev@example.invalid
     git_repo_sync_repos:
       - { name: vault, github: owner/vault, dest: /home/dev/vault, mode: sync, writable: true }
       - { name: config, github: owner/config, dest: ~/.local/share/config, mode: pull, after_pull: "echo \"applied\" > /tmp/applied" }

@@ -7,10 +7,14 @@
 #
 # It never forces anything and never leaves a half-finished rebase:
 #   - origin unreachable (offline, or a key GitHub doesn't know): a line on stderr, exit 0
-#   - a rebase or merge already in progress (you are working in the clone): exit 0
-#   - a sync whose pull conflicts or whose push fails: the rebase is aborted, the
-#     sync's own commit is undone (your changes are back as uncommitted edits), a
-#     desktop notification says so, exit 0; the next login tries again
+#   - a rebase, merge, cherry-pick or revert in progress, or unmerged files (you are
+#     working in the clone): exit 0
+#   - a sync whose commit fails or whose pull conflicts: the rebase is aborted and the
+#     sync's own commit undone (your changes are back as uncommitted edits), a desktop
+#     notification says so, exit 0; the next login tries again
+#   - a push that fails after a clean rebase: the rebased commit stays for the next
+#     login to push, with a notification
+# A clone with no git identity commits as <user>@<host>.
 # Exit 2 on bad usage, 1 only when the clone itself is unusable.
 set -uo pipefail
 
@@ -28,8 +32,14 @@ cd "$dest" || exit 1
 exec 9>"${git_dir}/git-repo-sync.lock"
 flock -n 9 || { say "another sync is running"; exit 0; }
 
-if [[ -e "${git_dir}/rebase-merge" || -e "${git_dir}/rebase-apply" || -e "${git_dir}/MERGE_HEAD" ]]; then
-    say "a rebase or merge is in progress; leaving it to you"
+for marker in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD sequencer; do
+    if [[ -e "${git_dir}/${marker}" ]]; then
+        say "a rebase, merge, cherry-pick or revert is in progress; leaving it to you"
+        exit 0
+    fi
+done
+if [[ -n "$(git ls-files -u)" ]]; then
+    say "unmerged files (a conflict is waiting to be resolved); leaving it to you"
     exit 0
 fi
 
@@ -62,8 +72,15 @@ fi
 before=$(git rev-parse HEAD)
 committed=0
 if dirty; then
+    host=$(uname -n); host=${host%%.*}
+    identity=()
+    [[ -n "$(git config user.email)" ]] || identity=(-c "user.name=$(id -un)" -c "user.email=$(id -un)@${host}")
     git add -A
-    git commit --quiet -m "${name} sync from $(hostname -s) ($(date '+%Y-%m-%d %H:%M'))" || { say "commit failed"; exit 1; }
+    if ! out=$(git "${identity[@]}" commit --quiet -m "${name} sync from ${host} ($(date '+%Y-%m-%d %H:%M'))" 2>&1); then
+        git reset --quiet   # unstage again: the clone stays as it was
+        notify "commit failed: $(head -1 <<<"$out")"
+        exit 0
+    fi
     committed=1
 fi
 

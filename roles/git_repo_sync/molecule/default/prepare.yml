@@ -38,8 +38,21 @@
               insteadOf = git@github-existing:
               insteadOf = git@github-missing:
               insteadOf = git@github.com:
+          [url "/srv/git/nowhere/"]
+              insteadOf = git@github-existing2:
           [safe]
               directory = *
+
+    - name: Ensure a second pre-existing clone exists whose alias will not reach origin
+      become: true
+      become_user: dev
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          git clone -q /srv/git/owner/existing.git /home/dev/existing2
+          git -C /home/dev/existing2 remote set-url origin git@github.com:owner/existing2.git
+        executable: /bin/bash
+        creates: /home/dev/existing2
 
     - name: Ensure a pre-existing clone with a github.com origin and a local edit exists
       become: true

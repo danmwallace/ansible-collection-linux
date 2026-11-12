@@ -11,6 +11,11 @@ git_repo_sync_user: "{{ ansible_user_id }}"
 #   after_pull: optional command run as the user after each successful pull or sync
 git_repo_sync_repos: []
 
+# The identity sync clones commit under (set in each sync clone's own config). Empty
+# leaves it to the user's git config; the login script falls back to <user>@<host>.
+git_repo_sync_git_name: ""
+git_repo_sync_git_email: ""
+
 # GitHub's published host key (api.github.com/meta), pinned rather than trusted on first use.
 git_repo_sync_github_host_key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 

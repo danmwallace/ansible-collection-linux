@@ -11,12 +11,17 @@ repo current across laptops without a personal GitHub credential on each one.
   alias `github-<name>` that uses only that key. GitHub's host key is pinned.
 - Clones `git@github-<name>:<owner/repo>.git` to `dest` if `dest` is absent.
   An existing clone is never touched, except that an `origin` pointing at the
-  same repo on github.com in another form is switched to the alias.
+  same repo on github.com in another form is switched to the alias, and only
+  once the alias reaches GitHub (an unregistered key would cut it off).
+- Sets `user.name`/`user.email` in each `sync` clone when
+  `git_repo_sync_git_name`/`_email` are given; otherwise the login script
+  commits as `<user>@<host>`.
 - Installs `~/.config/systemd/user/git-repo-sync@.service` and enables one
   instance per repo whose `mode` isn't `none` (by creating the
   `default.target.wants` link, so it works with no user session).
 
-If a clone fails (GitHub doesn't know the key yet, or no network), the play
+If a clone fails, or an existing clone's alias can't reach GitHub yet (the key
+isn't registered, or no network), the play
 stops for that host and prints a `gh repo deploy-key add` command per key,
 read-write when `writable` is true. The role never registers keys itself.
 
@@ -29,7 +34,9 @@ read-write when `writable` is true. The role never registers keys itself.
 
 It never forces anything:
 - Offline, or a key GitHub doesn't know: a line in the journal, exit 0.
-- A rebase or merge already in progress: it does nothing.
+- A rebase, merge, cherry-pick or revert in progress, or unmerged files: it
+  does nothing.
+- A commit that fails (a hook, say): it unstages again and notifies.
 - A pull that conflicts or a push that fails: the rebase is aborted, its own
   commit is undone (the changes are back as uncommitted edits), and a
   desktop notification says so. The next login tries again.
@@ -40,6 +47,7 @@ It never forces anything:
 |---|---|---|
 | `git_repo_sync_user` | `ansible_user_id` | owner of the clones, keys and units |
 | `git_repo_sync_repos` | `[]` | list of `{name, github, dest, mode, writable, after_pull}` |
+| `git_repo_sync_git_name`, `git_repo_sync_git_email` | `""` | identity for `sync` clones' commits |
 | `git_repo_sync_github_host_key` | GitHub's ed25519 key | pinned in `~/.ssh/known_hosts` |
 | `git_repo_sync_script` | `/usr/local/libexec/git-repo-sync` | where the login script goes |
 

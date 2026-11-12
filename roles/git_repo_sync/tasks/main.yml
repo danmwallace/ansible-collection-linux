@@ -111,33 +111,6 @@
       register: git_repo_sync_after
       when: not ansible_check_mode  # nothing was cloned in a dry run
 
-    - name: Read the public keys of repos that could not be cloned
-      ansible.builtin.slurp:
-        src: "{{ git_repo_sync_home }}/.ssh/deploy_{{ item.item.name }}_ed25519.pub"
-      loop: "{{ git_repo_sync_after.results | rejectattr('stat.exists') | list }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      register: git_repo_sync_refused_keys
-      when: not ansible_check_mode  # nothing was cloned in a dry run
-
-    - name: Stop with the deploy keys GitHub doesn't know yet
-      ansible.builtin.fail:
-        msg: |-
-          Could not clone {{ git_repo_sync_refused }}: GitHub refused the key, or there is no network.
-          git said: {{ git_repo_sync_git_said }}
-          If the deploy key isn't registered yet, register it (Dan approves each), then run the play again:
-          {% for k in git_repo_sync_refused_keys.results %}
-          {% set repo = k.item.item %}
-          {% set write = ' --allow-write' if repo.writable | default(false) else '' %}
-          # {{ repo.github }} ({{ 'read-write' if write else 'read-only' }})
-          gh repo deploy-key add - --repo {{ repo.github }} --title "{{ ansible_hostname }} {{ repo.name }}"{{ write }} <<< '{{ k.content | b64decode | trim }}'
-          {% endfor %}
-      vars:
-        git_repo_sync_refused: "{{ git_repo_sync_refused_keys.results | map(attribute='item.item.github') | join(', ') }}"
-        git_repo_sync_git_said: >-
-          {{ git_repo_sync_clone.results | selectattr('msg', 'defined') | map(attribute='msg') | select | first | default('nothing') }}
-      when: not ansible_check_mode and git_repo_sync_refused_keys.results | length > 0
-
     - name: Read the origin of clones that already existed
       community.general.git_config_info:
         name: remote.origin.url
@@ -149,12 +122,9 @@
       when: item.stat.exists
       register: git_repo_sync_origins
 
-    - name: Ensure existing clones of the same repo use their alias (no files or history change)
-      community.general.git_config:
-        scope: local
-        repo: "{{ item.item.item.dest }}"
-        name: remote.origin.url
-        value: "git@github-{{ item.item.item.name }}:{{ item.item.item.github }}.git"
+    - name: List existing clones of the same repo that don't use their alias yet
+      ansible.builtin.set_fact:
+        git_repo_sync_to_switch: "{{ (git_repo_sync_to_switch | default([])) + [item.item.item] }}"
       loop: "{{ git_repo_sync_origins.results | selectattr('config_value', 'defined') | list }}"
       loop_control:
         label: "{{ item.item.item.name }}"
@@ -162,6 +132,66 @@
         git_repo_sync_same_repo: >-
           ^(git@github\.com:|ssh://git@github\.com/|https://github\.com/){{ item.item.item.github | regex_escape }}(\.git)?/?$
       when: item.config_value is match(git_repo_sync_same_repo)
+
+    # An existing clone is only switched once its alias works: a deploy key GitHub
+    # doesn't know yet would otherwise cut the clone off (and its key would go unlisted).
+    - name: Check that each alias reaches GitHub before its clone is switched to it
+      ansible.builtin.command:
+        cmd: timeout 20 git ls-remote --exit-code git@github-{{ item.name }}:{{ item.github }}.git HEAD
+      environment:
+        GIT_SSH_COMMAND: ssh -o BatchMode=yes
+      loop: "{{ git_repo_sync_to_switch | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: git_repo_sync_alias_check
+      changed_when: false
+      failed_when: false
+      check_mode: false  # read-only
+
+    - name: Ensure existing clones whose alias works use it (no files or history change)
+      community.general.git_config:
+        scope: local
+        repo: "{{ item.item.dest }}"
+        name: remote.origin.url
+        value: "git@github-{{ item.item.name }}:{{ item.item.github }}.git"
+      loop: "{{ git_repo_sync_alias_check.results | default([]) | selectattr('rc', 'eq', 0) | list }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Ensure sync clones commit under the configured identity
+      community.general.git_config:
+        scope: local
+        repo: "{{ item[0].item.dest }}"
+        name: "{{ item[1].key }}"
+        value: "{{ item[1].value }}"
+      loop: >-
+        {{ ((git_repo_sync_existing.results if ansible_check_mode else git_repo_sync_after.results)
+            | selectattr('stat.exists') | selectattr('item.mode', 'eq', 'sync') | list)
+           | product({'user.name': git_repo_sync_git_name, 'user.email': git_repo_sync_git_email} | dict2items
+                     | selectattr('value') | list) | list }}
+      loop_control:
+        label: "{{ item[0].item.name }} {{ item[1].key }}"
+
+    - name: Stop with the deploy keys GitHub doesn't know yet
+      ansible.builtin.fail:
+        msg: |-
+          Can't reach {{ git_repo_sync_refused | map(attribute='github') | join(', ') }} through its deploy key: GitHub doesn't know the key yet, or there is no network.
+          git said: {{ git_repo_sync_git_said }}
+          If a key isn't registered yet, register it (Dan approves each), then run the play again:
+          {% for repo in git_repo_sync_refused %}
+          {% set write = ' --allow-write' if repo.writable | default(false) else '' %}
+          # {{ repo.github }} ({{ 'read-write' if write else 'read-only' }})
+          gh repo deploy-key add {{ git_repo_sync_home }}/.ssh/deploy_{{ repo.name }}_ed25519.pub --repo {{ repo.github }} --title "{{ ansible_hostname }} {{ repo.name }}"{{ write }}
+          {% endfor %}
+      vars:
+        git_repo_sync_refused: >-
+          {{ (git_repo_sync_after.results | rejectattr('stat.exists') | map(attribute='item') | list)
+             + (git_repo_sync_alias_check.results | default([]) | rejectattr('rc', 'eq', 0) | map(attribute='item') | list) }}
+        git_repo_sync_git_said: >-
+          {{ ((git_repo_sync_clone.results | selectattr('msg', 'defined') | map(attribute='msg') | list)
+              + (git_repo_sync_alias_check.results | default([]) | rejectattr('rc', 'eq', 0) | map(attribute='stderr') | list))
+             | select | first | default('nothing') }}
+      when: not ansible_check_mode and git_repo_sync_refused | length > 0
 
     - name: Ensure the user unit and settings directories exist
       ansible.builtin.file:
