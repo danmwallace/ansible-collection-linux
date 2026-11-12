@@ -1,0 +1,70 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Read the state the role should have left
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          h=/home/dev
+          for n in vault config existing; do
+            test "$(stat -c '%a %U' $h/.ssh/deploy_${n}_ed25519)" = "600 dev"
+            grep -qx "Host github-$n" $h/.ssh/config
+          done
+          grep -q "IdentityFile $h/.ssh/deploy_vault_ed25519" $h/.ssh/config
+          grep -q "BEGIN ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync" $h/.ssh/config
+          test "$(stat -c %a $h/.ssh/config)" = 600
+          test -x /usr/local/libexec/git-repo-sync
+          test -f $h/.config/systemd/user/git-repo-sync@.service
+          test "$(readlink $h/.config/systemd/user/default.target.wants/git-repo-sync@vault.service)" = ../git-repo-sync@.service
+          test -L $h/.config/systemd/user/default.target.wants/git-repo-sync@config.service
+          ! test -e $h/.config/systemd/user/default.target.wants/git-repo-sync@existing.service
+          grep -qx 'MODE=sync' $h/.config/git-repo-sync/vault.env
+          grep -qx 'DEST="/home/dev/.local/share/config"' $h/.config/git-repo-sync/config.env
+          grep -qx 'AFTER_PULL="echo \\"applied\\" > /tmp/applied"' $h/.config/git-repo-sync/config.env
+          test "$(git -C $h/vault config --get remote.origin.url)" = git@github-vault:owner/vault.git
+          test "$(cat $h/.local/share/config/README.md)" = config
+          test "$(git -C $h/existing config --get remote.origin.url)" = git@github-existing:owner/existing.git
+          test "$(cat $h/existing/README.md)" = "local edit"
+          test "$(stat -c %U $h/vault/README.md)" = dev
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Run the installed unit's command line as the user, the way systemd would
+      become: true
+      become_user: dev
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          . /home/dev/.config/git-repo-sync/config.env
+          /usr/local/libexec/git-repo-sync config "$DEST" "$MODE" "$AFTER_PULL"
+          test "$(cat /tmp/applied)" = applied
+        executable: /bin/bash
+      changed_when: false
+
+- name: Verify that an unregistered key stops the host with the command to register it
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply the role with a repo GitHub (here, the bare-repo stand-in) refuses
+      block:
+        - name: Include git_repo_sync with a missing repo
+          ansible.builtin.include_role:
+            name: danmwallace.linux.git_repo_sync
+          vars:
+            git_repo_sync_user: dev
+            git_repo_sync_repos:
+              - { name: missing, github: owner/missing, dest: /home/dev/missing, mode: sync, writable: true }
+        - name: Fail if the role carried on
+          ansible.builtin.fail:
+            msg: the role should have stopped on the refused clone
+      rescue:
+        - name: Check the message names the repo and the read-write register command
+          ansible.builtin.assert:
+            that:
+              - "'Could not clone owner/missing' in ansible_failed_result.msg"
+              - "'gh repo deploy-key add - --repo owner/missing' in ansible_failed_result.msg"
+              - "'--allow-write' in ansible_failed_result.msg"
+              - "'ssh-ed25519 ' in ansible_failed_result.msg"
+            quiet: true

@@ -1,0 +1,89 @@
+#!/usr/bin/bash
+# git-repo-sync <name> <dest> <mode> [after_pull]
+# Run at login by git-repo-sync@<name>.service (installed by danmwallace.linux.git_repo_sync).
+#
+#   pull  skip if the clone has uncommitted changes, else pull --ff-only, then run after_pull
+#   sync  commit everything, pull --rebase, push, then run after_pull
+#
+# It never forces anything and never leaves a half-finished rebase:
+#   - origin unreachable (offline, or a key GitHub doesn't know): a line on stderr, exit 0
+#   - a rebase or merge already in progress (you are working in the clone): exit 0
+#   - a sync whose pull conflicts or whose push fails: the rebase is aborted, the
+#     sync's own commit is undone (your changes are back as uncommitted edits), a
+#     desktop notification says so, exit 0; the next login tries again
+# Exit 2 on bad usage, 1 only when the clone itself is unusable.
+set -uo pipefail
+
+usage() { echo "usage: git-repo-sync <name> <dest> pull|sync [after_pull]" >&2; exit 2; }
+(($# == 3 || $# == 4)) || usage
+name=$1 dest=$2 mode=$3 after_pull=${4:-}
+[[ "$mode" == pull || "$mode" == sync ]] || usage
+
+say() { echo "git-repo-sync ${name}: $*" >&2; }
+notify() { command -v notify-send >/dev/null 2>&1 && notify-send -a git-repo-sync -u critical "${name} sync needs you" "$1"; say "$1"; }
+
+git_dir=$(git -C "$dest" rev-parse --absolute-git-dir 2>/dev/null) || { say "${dest} is not a git clone"; exit 1; }
+cd "$dest" || exit 1
+
+exec 9>"${git_dir}/git-repo-sync.lock"
+flock -n 9 || { say "another sync is running"; exit 0; }
+
+if [[ -e "${git_dir}/rebase-merge" || -e "${git_dir}/rebase-apply" || -e "${git_dir}/MERGE_HEAD" ]]; then
+    say "a rebase or merge is in progress; leaving it to you"
+    exit 0
+fi
+
+if ! timeout 15 git ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
+    say "origin unreachable; skipping"
+    exit 0
+fi
+
+run_after_pull() {
+    [[ -n "$after_pull" ]] || return 0
+    bash -c "$after_pull" || say "after_pull failed (exit $?)"
+}
+
+dirty() { [[ -n "$(git status --porcelain)" ]]; }
+
+if [[ "$mode" == pull ]]; then
+    if dirty; then
+        say "uncommitted changes; not pulling"
+        exit 0
+    fi
+    if ! out=$(git pull --ff-only --quiet 2>&1); then
+        notify "pull --ff-only failed: $(head -1 <<<"$out")"
+        exit 0
+    fi
+    run_after_pull
+    exit 0
+fi
+
+# sync
+before=$(git rev-parse HEAD)
+committed=0
+if dirty; then
+    git add -A
+    git commit --quiet -m "${name} sync from $(hostname -s) ($(date '+%Y-%m-%d %H:%M'))" || { say "commit failed"; exit 1; }
+    committed=1
+fi
+
+undo() {  # put the clone back as it was before this run
+    git rebase --abort >/dev/null 2>&1
+    if ((committed)); then
+        git reset --quiet --mixed "$before"
+    fi
+}
+
+if ! out=$(git pull --rebase --quiet 2>&1); then
+    undo
+    notify "$(grep -m1 CONFLICT <<<"$out" || head -1 <<<"$out")"
+    exit 0
+fi
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse '@{upstream}' 2>/dev/null)" ]]; then
+    if ! out=$(git push --quiet 2>&1); then
+        notify "push failed: $(head -1 <<<"$out")"
+        exit 0
+    fi
+fi
+run_after_pull
+exit 0

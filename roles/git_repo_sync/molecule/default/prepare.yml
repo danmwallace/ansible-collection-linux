@@ -1,0 +1,53 @@
+---
+# GitHub stand-in: bare repos under /srv/git, reached through system-wide insteadOf
+# rules, so the role's alias URLs (git@github-<name>:owner/repo.git) clone locally.
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Ensure the test user exists
+      ansible.builtin.user:
+        name: dev
+        create_home: true
+        shell: /bin/bash
+
+    - name: Ensure the bare repos exist with one commit each
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          for r in vault config existing; do
+            git init -q --bare -b main /srv/git/owner/$r.git
+            git -c user.name=t -c user.email=t@t clone -q /srv/git/owner/$r.git /tmp/seed-$r
+            echo "$r" > /tmp/seed-$r/README.md
+            git -C /tmp/seed-$r add -A
+            git -C /tmp/seed-$r -c user.name=t -c user.email=t@t commit -qm init
+            git -C /tmp/seed-$r push -q origin main
+          done
+          chown -R dev: /srv/git
+        executable: /bin/bash
+        creates: /srv/git/owner/existing.git
+
+    - name: Ensure alias and github.com URLs resolve to the local bare repos
+      ansible.builtin.copy:
+        dest: /etc/gitconfig
+        mode: "0644"
+        content: |
+          [url "/srv/git/"]
+              insteadOf = git@github-vault:
+              insteadOf = git@github-config:
+              insteadOf = git@github-existing:
+              insteadOf = git@github-missing:
+              insteadOf = git@github.com:
+          [safe]
+              directory = *
+
+    - name: Ensure a pre-existing clone with a github.com origin and a local edit exists
+      become: true
+      become_user: dev
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          git clone -q git@github.com:owner/existing.git /home/dev/existing
+          echo "local edit" > /home/dev/existing/README.md
+        executable: /bin/bash
+        creates: /home/dev/existing

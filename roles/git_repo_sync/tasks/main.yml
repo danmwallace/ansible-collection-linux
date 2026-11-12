@@ -1,0 +1,207 @@
+---
+- name: Ensure every repo entry is complete
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[A-Za-z0-9._-]+$')
+      - item.github is match('^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$')
+      - item.dest | length > 0
+      - item.mode in ['pull', 'sync', 'none']
+    fail_msg: "git_repo_sync_repos entry {{ item.name | default('?') }} needs name, github (owner/repo), dest and mode (pull|sync|none)"
+    quiet: true
+  loop: "{{ git_repo_sync_repos }}"
+  loop_control:
+    label: "{{ item.name | default('?') }}"
+
+- name: Ensure the login sync script is installed
+  ansible.builtin.copy:
+    src: git-repo-sync
+    dest: "{{ git_repo_sync_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Look up the user's home directory
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ git_repo_sync_user }}"
+
+- name: Set the user's home directory
+  ansible.builtin.set_fact:
+    git_repo_sync_home: "{{ ansible_facts.getent_passwd[git_repo_sync_user][4] }}"
+
+# systemd does not expand ~ in an EnvironmentFile, so every dest is made absolute once.
+- name: Expand ~ in each repo's dest
+  ansible.builtin.set_fact:
+    git_repo_sync_list: >-
+      {{ git_repo_sync_list | default([]) + [item | combine({'dest': item.dest | regex_replace('^~(?=/|$)', git_repo_sync_home)})] }}
+  loop: "{{ git_repo_sync_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure the user's keys, clones and units
+  become: true
+  become_user: "{{ git_repo_sync_user }}"
+  block:
+    - name: Ensure ~/.ssh exists and is private
+      ansible.builtin.file:
+        path: "{{ git_repo_sync_home }}/.ssh"
+        state: directory
+        mode: "0700"
+
+    - name: Ensure each repo has its own deploy key
+      ansible.builtin.command:
+        cmd: >-
+          ssh-keygen -q -t ed25519 -N ""
+          -C "{{ item.name }}@{{ ansible_hostname }}"
+          -f {{ git_repo_sync_home }}/.ssh/deploy_{{ item.name }}_ed25519
+        creates: "{{ git_repo_sync_home }}/.ssh/deploy_{{ item.name }}_ed25519"
+      loop: "{{ git_repo_sync_list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Ensure GitHub's host key is known
+      ansible.builtin.known_hosts:
+        path: "{{ git_repo_sync_home }}/.ssh/known_hosts"
+        name: github.com
+        key: "{{ git_repo_sync_github_host_key }}"
+
+    - name: Ensure an ssh alias per repo points at its deploy key
+      ansible.builtin.blockinfile:
+        path: "{{ git_repo_sync_home }}/.ssh/config"
+        create: true
+        mode: "0600"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync"
+        block: |
+          {% for repo in git_repo_sync_list %}
+          Host github-{{ repo.name }}
+              HostName github.com
+              User git
+              IdentityFile {{ git_repo_sync_home }}/.ssh/deploy_{{ repo.name }}_ed25519
+              IdentitiesOnly yes
+          {% endfor %}
+
+    - name: Check which clones already exist
+      ansible.builtin.stat:
+        path: "{{ item.dest }}/.git"
+      loop: "{{ git_repo_sync_list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: git_repo_sync_existing
+
+    - name: Ensure missing clones are cloned through their alias
+      ansible.builtin.git:
+        repo: "git@github-{{ item.item.name }}:{{ item.item.github }}.git"
+        dest: "{{ item.item.dest }}"
+        update: false
+      loop: "{{ git_repo_sync_existing.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: not item.stat.exists
+      register: git_repo_sync_clone
+      failed_when: false
+
+    # The clone's own result can't say "failed" (failed_when is off so every repo is
+    # tried), so what counts is whether the clone exists now.
+    - name: Check which clones exist after cloning
+      ansible.builtin.stat:
+        path: "{{ item.dest }}/.git"
+      loop: "{{ git_repo_sync_list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: git_repo_sync_after
+
+    - name: Read the public keys of repos that could not be cloned
+      ansible.builtin.slurp:
+        src: "{{ git_repo_sync_home }}/.ssh/deploy_{{ item.item.name }}_ed25519.pub"
+      loop: "{{ git_repo_sync_after.results | rejectattr('stat.exists') | list }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      register: git_repo_sync_refused_keys
+
+    - name: Stop with the deploy keys GitHub doesn't know yet
+      ansible.builtin.fail:
+        msg: |-
+          Could not clone {{ git_repo_sync_refused }}: GitHub refused the key, or there is no network.
+          git said: {{ git_repo_sync_git_said }}
+          If the deploy key isn't registered yet, register it (Dan approves each), then run the play again:
+          {% for k in git_repo_sync_refused_keys.results %}
+          {% set repo = k.item.item %}
+          {% set write = ' --allow-write' if repo.writable | default(false) else '' %}
+          # {{ repo.github }} ({{ 'read-write' if write else 'read-only' }})
+          gh repo deploy-key add - --repo {{ repo.github }} --title "{{ ansible_hostname }} {{ repo.name }}"{{ write }} <<< '{{ k.content | b64decode | trim }}'
+          {% endfor %}
+      vars:
+        git_repo_sync_refused: "{{ git_repo_sync_refused_keys.results | map(attribute='item.item.github') | join(', ') }}"
+        git_repo_sync_git_said: >-
+          {{ git_repo_sync_clone.results | selectattr('msg', 'defined') | map(attribute='msg') | select | first | default('nothing') }}
+      when: git_repo_sync_refused_keys.results | length > 0
+
+    - name: Read the origin of clones that already existed
+      community.general.git_config_info:
+        name: remote.origin.url
+        scope: local
+        path: "{{ item.item.dest }}"
+      loop: "{{ git_repo_sync_existing.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.stat.exists
+      register: git_repo_sync_origins
+
+    - name: Ensure existing clones of the same repo use their alias (no files or history change)
+      community.general.git_config:
+        scope: local
+        repo: "{{ item.item.item.dest }}"
+        name: remote.origin.url
+        value: "git@github-{{ item.item.item.name }}:{{ item.item.item.github }}.git"
+      loop: "{{ git_repo_sync_origins.results | selectattr('config_value', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.item.item.name }}"
+      vars:
+        git_repo_sync_same_repo: >-
+          ^(git@github\.com:|ssh://git@github\.com/|https://github\.com/){{ item.item.item.github | regex_escape }}(\.git)?/?$
+      when: item.config_value is match(git_repo_sync_same_repo)
+
+    - name: Ensure the user unit and settings directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ git_repo_sync_home }}/.config/systemd/user/default.target.wants"
+        - "{{ git_repo_sync_home }}/.config/git-repo-sync"
+
+    - name: Ensure the login sync unit template is installed
+      ansible.builtin.template:
+        src: git-repo-sync@.service.j2
+        dest: "{{ git_repo_sync_home }}/.config/systemd/user/git-repo-sync@.service"
+        mode: "0644"
+
+    - name: Ensure each repo's sync settings are written
+      ansible.builtin.copy:
+        dest: "{{ git_repo_sync_home }}/.config/git-repo-sync/{{ item.name }}.env"
+        mode: "0600"
+        content: |
+          DEST={{ item.dest | to_json }}
+          MODE={{ item.mode }}
+          AFTER_PULL={{ item.after_pull | default('') | to_json }}
+      loop: "{{ git_repo_sync_list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Ensure the login sync is enabled per repo (what systemctl --user enable does, without a session)
+      ansible.builtin.file:
+        src: ../git-repo-sync@.service
+        dest: "{{ git_repo_sync_home }}/.config/systemd/user/default.target.wants/git-repo-sync@{{ item.name }}.service"
+        state: link
+        force: true
+      loop: "{{ git_repo_sync_list | rejectattr('mode', 'eq', 'none') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Ensure repos with mode none have no login sync
+      ansible.builtin.file:
+        path: "{{ git_repo_sync_home }}/.config/systemd/user/default.target.wants/git-repo-sync@{{ item.name }}.service"
+        state: absent
+      loop: "{{ git_repo_sync_list | selectattr('mode', 'eq', 'none') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
