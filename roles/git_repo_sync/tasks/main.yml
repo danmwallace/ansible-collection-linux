@@ -109,6 +109,7 @@
       loop_control:
         label: "{{ item.name }}"
       register: git_repo_sync_after
+      when: not ansible_check_mode  # nothing was cloned in a dry run
 
     - name: Read the public keys of repos that could not be cloned
       ansible.builtin.slurp:
@@ -117,6 +118,7 @@
       loop_control:
         label: "{{ item.item.name }}"
       register: git_repo_sync_refused_keys
+      when: not ansible_check_mode  # nothing was cloned in a dry run
 
     - name: Stop with the deploy keys GitHub doesn't know yet
       ansible.builtin.fail:
@@ -134,7 +136,7 @@
         git_repo_sync_refused: "{{ git_repo_sync_refused_keys.results | map(attribute='item.item.github') | join(', ') }}"
         git_repo_sync_git_said: >-
           {{ git_repo_sync_clone.results | selectattr('msg', 'defined') | map(attribute='msg') | select | first | default('nothing') }}
-      when: git_repo_sync_refused_keys.results | length > 0
+      when: not ansible_check_mode and git_repo_sync_refused_keys.results | length > 0
 
     - name: Read the origin of clones that already existed
       community.general.git_config_info:
