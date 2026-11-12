@@ -97,13 +97,14 @@
             quiet: true
 
     - name: Read existing2's origin
-      ansible.builtin.command:
-        cmd: git -C /home/dev/existing2 config --get remote.origin.url
+      community.general.git_config_info:
+        name: remote.origin.url
+        scope: local
+        path: /home/dev/existing2
       register: git_repo_sync_verify_origin2
-      changed_when: false
 
     - name: Check existing2 still uses the origin that works
       ansible.builtin.assert:
         that:
-          - git_repo_sync_verify_origin2.stdout == 'git@github.com:owner/existing2.git'
+          - git_repo_sync_verify_origin2.config_value == 'git@github.com:owner/existing2.git'
         quiet: true

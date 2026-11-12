@@ -175,15 +175,17 @@
     - name: Stop with the deploy keys GitHub doesn't know yet
       ansible.builtin.fail:
         msg: |-
-          Can't reach {{ git_repo_sync_refused | map(attribute='github') | join(', ') }} through its deploy key: GitHub doesn't know the key yet, or there is no network.
+          Can't reach {{ git_repo_sync_refused_names }} through its deploy key: GitHub doesn't know the key yet, or there is no network.
           git said: {{ git_repo_sync_git_said }}
           If a key isn't registered yet, register it (Dan approves each), then run the play again:
           {% for repo in git_repo_sync_refused %}
           {% set write = ' --allow-write' if repo.writable | default(false) else '' %}
           # {{ repo.github }} ({{ 'read-write' if write else 'read-only' }})
-          gh repo deploy-key add {{ git_repo_sync_home }}/.ssh/deploy_{{ repo.name }}_ed25519.pub --repo {{ repo.github }} --title "{{ ansible_hostname }} {{ repo.name }}"{{ write }}
+          {% set key = git_repo_sync_home ~ '/.ssh/deploy_' ~ repo.name ~ '_ed25519.pub' %}
+          gh repo deploy-key add {{ key }} --repo {{ repo.github }} --title "{{ ansible_hostname }} {{ repo.name }}"{{ write }}
           {% endfor %}
       vars:
+        git_repo_sync_refused_names: "{{ git_repo_sync_refused | map(attribute='github') | join(', ') }}"
         git_repo_sync_refused: >-
           {{ (git_repo_sync_after.results | rejectattr('stat.exists') | map(attribute='item') | list)
              + (git_repo_sync_alias_check.results | default([]) | rejectattr('rc', 'eq', 0) | map(attribute='item') | list) }}
