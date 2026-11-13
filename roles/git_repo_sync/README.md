@@ -54,7 +54,7 @@ It never forces anything:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `git_repo_sync_user` | `ansible_user_id` | owner of the clones, keys and units |
+| `git_repo_sync_user` | `ansible_facts.user_id` | owner of the clones, keys and units |
 | `git_repo_sync_repos` | `[]` | list of `{name, github, dest, mode, writable, after_pull, interval, git_exclude}` |
 | `git_repo_sync_git_name`, `git_repo_sync_git_email` | `""` | identity for `sync` clones' commits |
 | `git_repo_sync_github_host_key` | GitHub's ed25519 key | pinned in `~/.ssh/known_hosts` |

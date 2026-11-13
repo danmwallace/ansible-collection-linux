@@ -1,6 +1,6 @@
 ---
 # The account whose clones, keys and login units these are.
-git_repo_sync_user: "{{ ansible_user_id }}"
+git_repo_sync_user: "{{ ansible_facts['user_id'] }}"
 
 # One entry per repo:
 #   name:       unique; names the ssh alias (github-<name>), the key and the unit instance

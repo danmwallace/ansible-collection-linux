@@ -1,6 +1,6 @@
 ---
 # The account whose Syncthing this is.
-syncthing_user: "{{ ansible_user_id }}"
+syncthing_user: "{{ ansible_facts['user_id'] }}"
 
 # Folders this machine syncs with the hub:
 #   id, label, path (may start with ~), type (sendreceive, sendonly, receiveonly),

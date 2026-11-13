@@ -51,7 +51,7 @@ the role only reads, then reports each change a real run would make.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `syncthing_user` | `ansible_user_id` | whose Syncthing this is |
+| `syncthing_user` | `ansible_facts.user_id` | whose Syncthing this is |
 | `syncthing_folders` | `[]` | list of `{id, label, path, type, ignore}`; `path` may start with `~`; `ignore` lines go to `<path>/.stignore` |
 | `syncthing_hub` | `{}` | `{name, device_id, address, api_url, api_key, api_fingerprint, delegate_to, folder_paths}` |
 | `syncthing_global_discovery` | `false` | this machine's global discovery |
