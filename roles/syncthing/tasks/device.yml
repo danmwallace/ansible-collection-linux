@@ -1,0 +1,51 @@
+---
+# A device in one Syncthing's config, added from Syncthing's own defaults or corrected
+# in place. Every call carries the API key, so none is logged.
+- name: Read a device for {{ syncthing_device.name ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/config/devices/{{ syncthing_device.id }}"
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    ca_path: "{{ syncthing_api.ca or omit }}"
+    status_code: [200, 404]
+  register: syncthing_device_now
+  check_mode: false
+  no_log: true
+
+- name: Read the device defaults on {{ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/config/defaults/device"
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    ca_path: "{{ syncthing_api.ca or omit }}"
+  register: syncthing_device_defaults
+  when: syncthing_device_now.status == 404
+  check_mode: false
+  no_log: true
+
+- name: Settle whether a device needs a change for {{ syncthing_device.name ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.set_fact:
+    syncthing_device_change: >-
+      {{ syncthing_device_now.status == 404
+         or syncthing_device_now.json.name != syncthing_device.name
+         or syncthing_device_now.json.addresses != syncthing_device.addresses }}
+
+- name: Report the device change a real run would make on {{ syncthing_api.label }}
+  ansible.builtin.debug:
+    msg: >-
+      would {{ 'add' if syncthing_device_now.status == 404 else 'update' }} device {{ syncthing_device.name }}
+      ({{ syncthing_device.id[:7] }}) at {{ syncthing_device.addresses | join(', ') }}
+  when: ansible_check_mode and syncthing_device_change | bool
+  changed_when: true
+
+- name: Ensure a device for {{ syncthing_device.name ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/config/devices/{{ syncthing_device.id }}"
+    method: PUT
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    ca_path: "{{ syncthing_api.ca or omit }}"
+    body_format: json
+    body: >-
+      {{ (syncthing_device_defaults.json if syncthing_device_now.status == 404 else syncthing_device_now.json)
+         | combine({'deviceID': syncthing_device.id, 'name': syncthing_device.name, 'addresses': syncthing_device.addresses}) }}
+  when: not ansible_check_mode and syncthing_device_change | bool
+  changed_when: true
+  no_log: true

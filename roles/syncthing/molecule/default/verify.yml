@@ -1,0 +1,53 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  vars:
+    hub: { url: "http://127.0.0.1:8385", key: hub-test-key }
+  tasks:
+    - name: Read both sides through their APIs and the files the role wrote
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          KEY=$(sed -n 's|.*<apikey>\(.*\)</apikey>.*|\1|p' /home/dev/.local/state/syncthing/config.xml)
+          DEV=$(runuser -u dev -- syncthing device-id)
+          HUB=$(cat /root/hub-id)
+          export KEY DEV HUB
+          python3 - <<'PY'
+          import json, os, urllib.request
+          def get(port, key, path):
+              req = urllib.request.Request(f"http://127.0.0.1:{port}/rest/{path}", headers={"X-API-Key": key})
+              return json.load(urllib.request.urlopen(req))
+          L = lambda p: get(8384, os.environ["KEY"], p)
+          H = lambda p: get(8385, "hub-test-key", p)
+          dev, hub = os.environ["DEV"], os.environ["HUB"]
+          d = L(f"config/devices/{hub}")
+          assert d["name"] == "test-nas" and d["addresses"] == ["tcp://127.0.0.1:22001"], d
+          f = L("config/folders/syncthing")
+          assert (f["path"], f["type"], f["label"]) == ("/home/dev/Syncthing", "sendreceive", "Syncthing"), f
+          assert hub in [x["deviceID"] for x in f["devices"]] and f["rescanIntervalS"] > 0 and f["fsWatcherEnabled"], f
+          o = L("config/options")
+          assert o["globalAnnounceEnabled"] is False and o["relaysEnabled"] is False, o
+          assert H(f"config/devices/{dev}")["name"] == "syncthing-instance"
+          f = H("config/folders/syncthing")
+          assert f["path"] == "/home/nas/Syncthing" and dev in [x["deviceID"] for x in f["devices"]], f
+          assert f["rescanIntervalS"] > 0, f
+          PY
+          printf '(?d).git\n(?d)**/.obsidian/workspace*.json\n' | cmp - /home/dev/Syncthing/.stignore
+          test "$(stat -c %U /home/dev/Syncthing)" = dev
+          test "$(readlink /home/dev/.config/systemd/user/default.target.wants/syncthing.service)" = /usr/lib/systemd/user/syncthing.service
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Write a file on the laptop side
+      ansible.builtin.copy:
+        dest: /home/dev/Syncthing/hello.md
+        content: "hello from the laptop\n"
+        owner: dev
+        mode: "0644"
+
+    - name: Wait for it to arrive on the stand-in NAS
+      ansible.builtin.wait_for:
+        path: /home/nas/Syncthing/hello.md
+        search_regex: hello from the laptop
+        timeout: 120

@@ -1,0 +1,72 @@
+---
+# A folder in one Syncthing's config, shared with one more device. A new folder starts
+# from Syncthing's own defaults (a bare object would turn off rescans and the watcher).
+# An existing folder at a different path is never moved: that stops the play.
+- name: Read a folder for {{ syncthing_folder.id ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/config/folders/{{ syncthing_folder.id }}"
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    ca_path: "{{ syncthing_api.ca or omit }}"
+    status_code: [200, 404]
+  register: syncthing_folder_now
+  check_mode: false
+  no_log: true
+
+- name: Stop when the folder already lives elsewhere for {{ syncthing_folder.id ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.fail:
+    msg: >-
+      {{ syncthing_api.label }} has folder {{ syncthing_folder.id }} at {{ syncthing_folder_now.json.path }},
+      not {{ syncthing_folder_path }}; not moving it.
+  when: syncthing_folder_now.status == 200 and syncthing_folder_now.json.path | regex_replace('/$', '') != syncthing_folder_path | regex_replace('/$', '')
+
+- name: Read the folder defaults on {{ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/config/defaults/folder"
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    ca_path: "{{ syncthing_api.ca or omit }}"
+  register: syncthing_folder_defaults
+  when: syncthing_folder_now.status == 404
+  check_mode: false
+  no_log: true
+
+- name: Settle what a folder needs for {{ syncthing_folder.id ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.set_fact:
+    syncthing_folder_shared: >-
+      {{ syncthing_folder_now.status == 200
+         and syncthing_share_with in (syncthing_folder_now.json.devices | map(attribute='deviceID') | list) }}
+
+- name: Report the folder change a real run would make on {{ syncthing_api.label }}
+  ansible.builtin.debug:
+    msg: >-
+      would {{ 'create folder ' ~ syncthing_folder.id ~ ' at ' ~ syncthing_folder_path ~ ' and share it'
+              if syncthing_folder_now.status == 404 else 'share folder ' ~ syncthing_folder.id }}
+      with {{ syncthing_share_with[:7] }}
+  when: ansible_check_mode and not syncthing_folder_shared | bool
+  changed_when: true
+
+- name: Ensure a folder exists for {{ syncthing_folder.id ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/config/folders/{{ syncthing_folder.id }}"
+    method: PUT
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    ca_path: "{{ syncthing_api.ca or omit }}"
+    body_format: json
+    body: >-
+      {{ syncthing_folder_defaults.json | combine({'id': syncthing_folder.id, 'label': syncthing_folder.label,
+         'path': syncthing_folder_path, 'type': syncthing_folder.type,
+         'devices': [{'deviceID': syncthing_share_with}]}) }}
+  when: not ansible_check_mode and syncthing_folder_now.status == 404
+  changed_when: true
+  no_log: true
+
+- name: Ensure a folder is shared for {{ syncthing_folder.id ~ ' on ' ~ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/config/folders/{{ syncthing_folder.id }}"
+    method: PATCH
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    ca_path: "{{ syncthing_api.ca or omit }}"
+    body_format: json
+    body: { devices: "{{ syncthing_folder_now.json.devices + [{'deviceID': syncthing_share_with}] }}" }
+  when: not ansible_check_mode and syncthing_folder_now.status == 200 and not syncthing_folder_shared | bool
+  changed_when: true
+  no_log: true

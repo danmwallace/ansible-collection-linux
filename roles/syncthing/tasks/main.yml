@@ -1,0 +1,204 @@
+---
+- name: Ensure the hub and every folder are described
+  ansible.builtin.assert:
+    that:
+      - syncthing_hub.device_id | default('') is match('^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$')
+      - syncthing_hub.address | default('') is match('^(tcp|quic)://')
+      - syncthing_hub.api_url | default('') is match('^https?://')
+      - syncthing_hub.api_key | default('') | length > 0
+      - syncthing_folders | map(attribute='id') | list | length == syncthing_folders | length
+      - syncthing_folders | rejectattr('id', 'in', (syncthing_hub.folder_paths | default({})).keys() | list) | list | length == 0
+    fail_msg: "syncthing_hub needs device_id, address, api_url, api_key and a folder_paths entry for every folder"
+    quiet: true
+  no_log: true  # the hub's API key
+
+- name: Look up the user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ syncthing_user }}"
+
+- name: Settle the user's home and paths
+  ansible.builtin.set_fact:
+    syncthing_home: "{{ ansible_facts.getent_passwd[syncthing_user][4] }}"
+    syncthing_uid: "{{ ansible_facts.getent_passwd[syncthing_user][1] }}"
+    syncthing_config: "{{ ansible_facts.getent_passwd[syncthing_user][4] }}/.local/state/syncthing/config.xml"
+
+- name: Detect a bootc host
+  ansible.builtin.stat:
+    path: /run/ostree-booted
+  register: syncthing_ostree
+
+- name: Ensure Syncthing is installed
+  ansible.builtin.dnf:
+    name: syncthing
+    state: present
+  when: not syncthing_ostree.stat.exists
+
+- name: Check Syncthing is in the image
+  ansible.builtin.stat:
+    path: /usr/bin/syncthing
+  register: syncthing_binary
+
+- name: Stop when a bootc image has no Syncthing
+  ansible.builtin.fail:
+    msg: "/usr/bin/syncthing is missing; on bootc hosts it comes with the image (atomic-hyprland >= the Syncthing release)."
+  when: syncthing_ostree.stat.exists and not syncthing_binary.stat.exists
+
+- name: Ensure the user has a Syncthing identity
+  become: true
+  become_user: "{{ syncthing_user }}"
+  ansible.builtin.command:
+    cmd: syncthing generate --no-port-probing
+    creates: "{{ syncthing_config }}"
+
+- name: Ensure the user's Syncthing starts with the session (what systemctl --user enable does)
+  become: true
+  become_user: "{{ syncthing_user }}"
+  block:
+    - name: Ensure the wants directory exists
+      ansible.builtin.file:
+        path: "{{ syncthing_home }}/.config/systemd/user/default.target.wants"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure the user service is enabled
+      ansible.builtin.file:
+        src: /usr/lib/systemd/user/syncthing.service
+        dest: "{{ syncthing_home }}/.config/systemd/user/default.target.wants/syncthing.service"
+        state: link
+
+- name: Check whether a dry run can go further
+  ansible.builtin.stat:
+    path: "{{ syncthing_config }}"
+  register: syncthing_config_stat
+
+- name: Report what a real run would do on a machine without Syncthing yet
+  ansible.builtin.debug:
+    msg: >-
+      Syncthing isn't set up for {{ syncthing_user }} yet; a real run creates it, then pairs
+      {{ syncthing_folders | map(attribute='id') | join(', ') }} with {{ syncthing_hub.name }}.
+  when: not syncthing_config_stat.stat.exists
+
+- name: Pair this machine with the hub
+  when: syncthing_config_stat.stat.exists
+  block:
+    - name: Ensure the user's Syncthing is running
+      become: true
+      become_user: "{{ syncthing_user }}"
+      ansible.builtin.systemd_service:
+        name: syncthing.service
+        scope: user
+        state: started
+        daemon_reload: true
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ syncthing_uid }}"
+      register: syncthing_started
+      failed_when: false
+
+    - name: Stop when the user's systemd isn't running
+      ansible.builtin.fail:
+        msg: "Couldn't start {{ syncthing_user }}'s Syncthing ({{ syncthing_started.msg | default('') }}): log in as {{ syncthing_user }} once, then run again."
+      when: syncthing_started.failed | default(false)
+
+    - name: Read the local Syncthing's GUI address and API key
+      become: true
+      become_user: "{{ syncthing_user }}"
+      ansible.builtin.slurp:
+        src: "{{ syncthing_config }}"
+      register: syncthing_config_xml
+      no_log: true
+
+    - name: Settle the local API
+      ansible.builtin.set_fact:
+        syncthing_local_api:
+          label: "{{ inventory_hostname }}"
+          url: "http://{{ (syncthing_config_xml.content | b64decode | regex_search('<gui[^>]*>[\\s\\S]*?<address>([^<]+)</address>', '\\1') | first) }}"
+          key: "{{ syncthing_config_xml.content | b64decode | regex_search('<apikey>([^<]+)</apikey>', '\\1') | first }}"
+          ca: ""
+        syncthing_hub_api:
+          label: "{{ syncthing_hub.name }}"
+          url: "{{ syncthing_hub.api_url }}"
+          key: "{{ syncthing_hub.api_key }}"
+          ca: "{{ syncthing_hub.api_ca | default('') }}"
+      no_log: true
+
+    - name: Wait for the local Syncthing's API
+      ansible.builtin.uri:
+        url: "{{ syncthing_local_api.url }}/rest/system/ping"
+        headers: { X-API-Key: "{{ syncthing_local_api.key }}" }
+      register: syncthing_ping
+      until: syncthing_ping.status | default(0) == 200
+      retries: 30
+      delay: 1
+      check_mode: false
+      no_log: true
+
+    - name: Read this machine's device ID
+      become: true
+      become_user: "{{ syncthing_user }}"
+      ansible.builtin.command:
+        cmd: syncthing device-id
+      register: syncthing_my_id
+      changed_when: false
+      check_mode: false
+
+    - name: Ensure each folder exists with its ignore patterns
+      become: true
+      become_user: "{{ syncthing_user }}"
+      block:
+        - name: Ensure the folders exist
+          ansible.builtin.file:
+            path: "{{ item.path | regex_replace('^~(?=/|$)', syncthing_home) }}"
+            state: directory
+            mode: "0700"
+          loop: "{{ syncthing_folders }}"
+          loop_control:
+            label: "{{ item.id }}"
+
+        - name: Ensure each folder's .stignore
+          ansible.builtin.copy:
+            dest: "{{ item.path | regex_replace('^~(?=/|$)', syncthing_home) }}/.stignore"
+            content: "{{ (item.ignore | default([]) | join('\n')) ~ '\n' if item.ignore | default([]) else '' }}"
+            mode: "0644"
+          loop: "{{ syncthing_folders }}"
+          loop_control:
+            label: "{{ item.id }}"
+
+    - name: Ensure this machine knows the hub
+      ansible.builtin.include_tasks: device.yml
+      vars:
+        syncthing_api: "{{ syncthing_local_api }}"
+        syncthing_device: { id: "{{ syncthing_hub.device_id }}", name: "{{ syncthing_hub.name }}", addresses: ["{{ syncthing_hub.address }}"] }
+
+    - name: Ensure this machine's discovery and relay settings
+      ansible.builtin.include_tasks: options.yml
+      vars:
+        syncthing_api: "{{ syncthing_local_api }}"
+
+    - name: Ensure this machine shares each folder with the hub
+      ansible.builtin.include_tasks: folder.yml
+      loop: "{{ syncthing_folders }}"
+      loop_control:
+        loop_var: syncthing_folder
+        label: "{{ syncthing_folder.id }}"
+      vars:
+        syncthing_api: "{{ syncthing_local_api }}"
+        syncthing_folder_path: "{{ syncthing_folder.path | regex_replace('^~(?=/|$)', syncthing_home) }}"
+        syncthing_share_with: "{{ syncthing_hub.device_id }}"
+
+    - name: Ensure the hub knows this machine
+      ansible.builtin.include_tasks: device.yml
+      vars:
+        syncthing_api: "{{ syncthing_hub_api }}"
+        syncthing_device: { id: "{{ syncthing_my_id.stdout | trim }}", name: "{{ syncthing_device_name }}", addresses: [dynamic] }
+
+    - name: Ensure the hub shares each folder with this machine
+      ansible.builtin.include_tasks: folder.yml
+      loop: "{{ syncthing_folders }}"
+      loop_control:
+        loop_var: syncthing_folder
+        label: "{{ syncthing_folder.id }}"
+      vars:
+        syncthing_api: "{{ syncthing_hub_api }}"
+        syncthing_folder_path: "{{ syncthing_hub.folder_paths[syncthing_folder.id] }}"
+        syncthing_share_with: "{{ syncthing_my_id.stdout | trim }}"

@@ -1,0 +1,54 @@
+---
+# A laptop user (dev) and a stand-in NAS: a second Syncthing instance (nas) on its own
+# ports with a known API key, discovery and relays off, reachable on 127.0.0.1 only.
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Ensure the two users exist
+      ansible.builtin.user:
+        name: "{{ item }}"
+        create_home: true
+      loop: [dev, nas]
+
+    - name: Ensure dev's user manager runs without a login (the laptop user is "logged in")
+      ansible.builtin.command:
+        cmd: loginctl enable-linger dev
+        creates: /var/lib/systemd/linger/dev
+
+    - name: Ensure the stand-in NAS has a Syncthing identity on its own ports
+      become: true
+      become_user: nas
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          syncthing generate --home /home/nas/st --no-port-probing >/dev/null
+          sed -i -e 's|<listenAddress>default</listenAddress>|<listenAddress>tcp://127.0.0.1:22001</listenAddress>|' \
+                 -e 's|<globalAnnounceEnabled>true|<globalAnnounceEnabled>false|' \
+                 -e 's|<relaysEnabled>true|<relaysEnabled>false|' \
+                 -e 's|<localAnnounceEnabled>true|<localAnnounceEnabled>false|' /home/nas/st/config.xml
+          mkdir -p /home/nas/Syncthing
+        executable: /bin/bash
+        creates: /home/nas/st/config.xml
+
+    - name: Ensure the stand-in NAS is running
+      ansible.builtin.command:
+        cmd: >-
+          systemd-run --uid=nas --unit=st-hub -p Environment=HOME=/home/nas
+          /usr/bin/syncthing serve --home /home/nas/st --no-browser --no-restart
+          --gui-address=127.0.0.1:8385 --gui-apikey=hub-test-key
+        creates: /run/systemd/transient/st-hub.service
+
+    - name: Wait for the stand-in NAS's API
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8385/rest/system/ping
+        headers: { X-API-Key: hub-test-key }
+      register: syncthing_prepare_ping
+      until: syncthing_prepare_ping.status == 200
+      retries: 30
+      delay: 1
+
+    - name: Record the stand-in NAS's device ID
+      ansible.builtin.shell:
+        cmd: runuser -u nas -- syncthing device-id --home /home/nas/st > /root/hub-id
+        creates: /root/hub-id

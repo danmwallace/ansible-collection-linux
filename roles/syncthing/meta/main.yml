@@ -1,0 +1,11 @@
+---
+galaxy_info:
+  author: Dan Wallace
+  description: A user's Syncthing, its folders paired with an always-on hub through both REST APIs
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Fedora
+      versions:
+        - all
+dependencies: []

@@ -43,6 +43,7 @@ collections:
 | [`danmwallace.linux.raspberry_pi_network_toolkit`](roles/raspberry_pi_network_toolkit/README.md) | Configure a Raspberry Pi (or Debian/Ubuntu host) as a portable network diagnostics and reconnaissance toolkit. |
 | [`danmwallace.linux.restic_backup`](roles/restic_backup/README.md) | Nightly Restic backups of application data to an SFTP repository, with database dumps and Uptime Kuma monitoring. |
 | [`danmwallace.linux.restic_restore`](roles/restic_restore/README.md) | Restore the latest snapshot from a Restic repository, handling SELinux contexts and ownership. |
+| [`danmwallace.linux.syncthing`](roles/syncthing/README.md) | A user's Syncthing with its folders paired with an always-on hub, both sides set through the REST API (no public discovery or relays). |
 
 ## Example Playbook
 
