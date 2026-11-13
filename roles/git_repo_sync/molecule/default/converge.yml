@@ -1,0 +1,17 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  vars:
+    git_repo_sync_user: dev
+    git_repo_sync_git_name: Dev Example
+    git_repo_sync_git_email: dev@example.invalid
+    git_repo_sync_repos:
+      - { name: vault, github: owner/vault, dest: /home/dev/vault, mode: sync, writable: true,
+          interval: 15min, git_exclude: [".syncthing.*.tmp", ".stversions/"] }
+      - { name: config, github: owner/config, dest: ~/.local/share/config, mode: pull, after_pull: "echo \"applied\" > /tmp/applied" }
+      - { name: existing, github: owner/existing, dest: /home/dev/existing, mode: none }
+  tasks:
+    - name: Apply git_repo_sync with test values
+      ansible.builtin.include_role:
+        name: danmwallace.linux.git_repo_sync

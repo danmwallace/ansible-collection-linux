@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# One instance per repo; its settings are in ~/.config/git-repo-sync/<name>.env.
+[Unit]
+Description=Sync the %i git clone at login
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/git-repo-sync/%i.env
+# The repos' after_pull commands may need tools from the user's PATH (claude, brew).
+Environment=PATH=%h/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
+# Wi-Fi often comes up just after login: wait for it briefly. Failure is fine; the
+# script itself skips quietly when origin is unreachable.
+ExecStartPre=-/usr/bin/nm-online -q -t 60
+ExecStart={{ git_repo_sync_script }} %i ${DEST} ${MODE} ${AFTER_PULL}
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

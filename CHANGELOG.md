@@ -7,6 +7,37 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-12
+
+### Added
+
+- `git_repo_sync`: one GitHub deploy key per repo, a clone through a
+  role-owned ssh config (`~/.ssh/git-repo-sync.conf`, read via
+  `core.sshCommand`), and a per-repo login service that either pulls
+  (fast-forward only, skipped when the clone is dirty) or syncs (commit,
+  fetch, rebase only when origin moved, push). It never forces: offline, a
+  rebase/merge/cherry-pick in progress or an unmerged index is a quiet skip,
+  and a conflict aborts the rebase, undoes the sync's own commit and sends a
+  desktop notification. An optional timer (`interval`) syncs between logins,
+  and per-repo `git_exclude` lines go into `.git/info/exclude`. The play
+  stops with the `gh repo deploy-key add` commands when GitHub doesn't know a
+  key yet. Covered by `tests/test-sync.sh` (16 cases) and a molecule
+  scenario with a check-mode step and idempotence.
+- `syncthing`: a user's Syncthing paired with an always-on hub (a NAS, say),
+  both sides configured through the REST API: the hub at a fixed address,
+  global discovery and relays off, each folder shared with the hub with a
+  managed `.stignore` block. It reads before it writes, never moves an
+  existing folder, refuses overlapping folders, reports changes in check
+  mode, and keeps every API key out of the output at any verbosity
+  (`tests/check-verbose-log.sh`). A CA-signed hub certificate is validated
+  normally; only a self-signed one is pinned. Molecule runs a laptop and a
+  stand-in HTTPS hub and checks that a file actually syncs.
+
+### Changed
+
+- `community.general` floor raised from 8.0.0 to 8.1.0 for
+  `community.general.git_config_info`, used by `git_repo_sync`.
+
 ## [1.7.0] - 2026-11-09
 
 ### Added

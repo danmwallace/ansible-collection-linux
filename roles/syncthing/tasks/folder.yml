@@ -1,0 +1,88 @@
+---
+# A folder in one Syncthing's config, shared with one more device. Only ever adds: a new
+# folder starts from Syncthing's own defaults (a bare object would turn off rescans and
+# the watcher); an existing one gets the device appended to its list. Never moves a
+# folder, and never creates one whose path overlaps another folder's.
+- name: Read the folders on {{ syncthing_api.label }}
+  ansible.builtin.include_tasks: call.yml
+  vars:
+    syncthing_call: { path: config/folders }
+
+- name: Settle what the folder needs on {{ syncthing_api.label }}
+  ansible.builtin.set_fact:
+    syncthing_folder_now: "{{ syncthing_response.json | selectattr('id', 'eq', syncthing_folder.id) | first | default({}) }}"
+    syncthing_folder_others: >-
+      {{ syncthing_response.json | rejectattr('id', 'eq', syncthing_folder.id)
+         | map(attribute='path') | map('regex_replace', '^~(?=/|$)', syncthing_api.home or '~')
+         | map('regex_replace', '/+$', '') | list }}
+    syncthing_folder_want: "{{ syncthing_folder_path | regex_replace('/+$', '') }}"
+  no_log: true
+
+- name: Stop when the folder already lives elsewhere on {{ syncthing_api.label }}
+  ansible.builtin.fail:
+    msg: >-
+      {{ syncthing_api.label }} has folder {{ syncthing_folder.id }} at {{ syncthing_folder_now.path }},
+      not {{ syncthing_folder_path }}; not moving it.
+  when: >-
+    syncthing_folder_now != {} and
+    (syncthing_folder_now.path | regex_replace('^~(?=/|$)', syncthing_api.home or '~') | regex_replace('/+$', ''))
+    != syncthing_folder_want
+
+- name: Stop when a new folder would overlap another folder on {{ syncthing_api.label }}
+  ansible.builtin.fail:
+    msg: >-
+      {{ syncthing_folder_path }} overlaps folder path(s) {{ syncthing_folder_clash | join(', ') }} on
+      {{ syncthing_api.label }}; two folders on one directory would sync each other's files.
+  when: syncthing_folder_now == {} and syncthing_folder_clash | length > 0
+  vars:
+    syncthing_folder_clash: >-
+      {{ syncthing_folder_others | select('eq', syncthing_folder_want) | list
+         + syncthing_folder_others | select('match', '^' ~ (syncthing_folder_want | regex_escape) ~ '/') | list
+         + syncthing_folder_others | select('in', syncthing_folder_want_parents) | list }}
+    syncthing_folder_want_parents: |-
+      {%- set parts = syncthing_folder_want.split('/') -%}
+      {%- set out = [] -%}
+      {%- for i in range(1, parts | length) -%}
+      {%- set _ = out.append(parts[:i] | join('/')) -%}
+      {%- endfor -%}
+      {{- out | select | list -}}
+
+- name: Settle whether the folder is shared already
+  ansible.builtin.set_fact:
+    syncthing_folder_shared: "{{ syncthing_folder_now != {} and syncthing_share_with in (syncthing_folder_now.devices | map(attribute='deviceID') | list) }}"
+  no_log: true
+
+- name: Report the folder change a real run would make on {{ syncthing_api.label }}
+  ansible.builtin.debug:
+    msg: >-
+      would {{ 'create folder ' ~ syncthing_folder.id ~ ' at ' ~ syncthing_folder_path ~ ' and share it'
+              if syncthing_folder_now == {} else 'share folder ' ~ syncthing_folder.id }}
+      with {{ syncthing_share_with[:7] }}
+  when: ansible_check_mode and not syncthing_folder_shared | bool
+  changed_when: true
+
+- name: Read the folder defaults when it is new
+  ansible.builtin.include_tasks: call.yml
+  vars:
+    syncthing_call: { path: config/defaults/folder }
+  when: not ansible_check_mode and syncthing_folder_now == {}
+
+- name: Create the folder on {{ syncthing_api.label }}
+  ansible.builtin.include_tasks: call.yml
+  vars:
+    syncthing_call:
+      method: PUT
+      path: "config/folders/{{ syncthing_folder.id }}"
+      body: >-
+        {{ syncthing_response.json | combine({'id': syncthing_folder.id, 'label': syncthing_folder.label,
+           'path': syncthing_folder_path, 'type': syncthing_folder.type, 'devices': [{'deviceID': syncthing_share_with}]}) }}
+  when: not ansible_check_mode and syncthing_folder_now == {}
+
+- name: Share the existing folder on {{ syncthing_api.label }}
+  ansible.builtin.include_tasks: call.yml
+  vars:
+    syncthing_call:
+      method: PATCH
+      path: "config/folders/{{ syncthing_folder.id }}"
+      body: { devices: "{{ syncthing_folder_now.devices + [{'deviceID': syncthing_share_with}] }}" }
+  when: not ansible_check_mode and syncthing_folder_now != {} and not syncthing_folder_shared | bool

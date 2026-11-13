@@ -1,0 +1,21 @@
+---
+# The account whose Syncthing this is.
+syncthing_user: "{{ ansible_facts['user_id'] }}"
+
+# Folders this machine syncs with the hub:
+#   id, label, path (may start with ~), type (sendreceive, sendonly, receiveonly),
+#   ignore: lines written to <path>/.stignore (ignore patterns are per device)
+syncthing_folders: []
+
+# The always-on peer every folder is shared with, changed through its REST API:
+#   name, device_id, address (e.g. tcp://10.10.99.3:22000),
+#   api_url, api_key (from ansible-vault), api_ca (optional CA/cert file to trust),
+#   folder_paths: {folder id: the folder's path on the hub}
+syncthing_hub: {}
+
+# This machine talks to the hub at its fixed address: no public discovery or relays.
+syncthing_global_discovery: false
+syncthing_relays: false
+
+# How this machine is named on the hub.
+syncthing_device_name: "{{ inventory_hostname }}"

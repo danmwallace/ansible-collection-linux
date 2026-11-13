@@ -1,0 +1,23 @@
+---
+# The account whose clones, keys and login units these are.
+git_repo_sync_user: "{{ ansible_facts['user_id'] }}"
+
+# One entry per repo:
+#   name:       unique; names the ssh alias (github-<name>), the key and the unit instance
+#   github:     owner/repo on github.com
+#   dest:       where the clone lives
+#   mode:       pull (fast-forward at login), sync (commit, pull --rebase, push at login) or none
+#   writable:   whether the deploy key Dan registers should allow pushes (default false)
+#   after_pull: optional command run as the user after each successful pull or sync
+git_repo_sync_repos: []
+
+# The identity sync clones commit under (set in each sync clone's own config). Empty
+# leaves it to the user's git config; the login script falls back to <user>@<host>.
+git_repo_sync_git_name: ""
+git_repo_sync_git_email: ""
+
+# GitHub's published host key (api.github.com/meta), pinned rather than trusted on first use.
+git_repo_sync_github_host_key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+# Where the login script is installed (/usr/local is writable on bootc images too).
+git_repo_sync_script: /usr/local/libexec/git-repo-sync

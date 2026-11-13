@@ -1,0 +1,103 @@
+# danmwallace.linux.git_repo_sync
+
+Gives each GitHub repo its own deploy key on the machine, clones it, and
+installs a login service that either pulls the clone or syncs it (commit,
+pull --rebase, push). Built for keeping a notes vault and a shared config
+repo current across laptops without a personal GitHub credential on each one.
+
+## What it does, per repo
+
+- Creates `~/.ssh/deploy_<name>_ed25519` if absent, and an alias
+  `github-<name>` for it in `~/.ssh/git-repo-sync.conf`, a file only these
+  clones read (`core.sshCommand = ssh -F ...`): no agent, no prompts, GitHub's
+  host key pinned. It isn't in `~/.ssh/config` because ssh adds every
+  `IdentityFile` that matches; on Fedora, `Match final` even re-applies a
+  `Host github.com` block to the alias, so a personal key would quietly be
+  used instead of the deploy key. An older managed block in `~/.ssh/config` is
+  removed.
+- Checks on every run that each clone reaches GitHub with its deploy key alone,
+  and stops with the keys to register if one doesn't (new, unregistered or
+  revoked).
+- Clones `git@github-<name>:<owner/repo>.git` to `dest` if `dest` is absent.
+  An existing clone is never touched, except that an `origin` pointing at the
+  same repo on github.com in another form is switched to the alias, and only
+  once the alias reaches GitHub (an unregistered key would cut it off).
+- Sets `user.name`/`user.email` in each `sync` clone when
+  `git_repo_sync_git_name`/`_email` are given; otherwise the login script
+  commits as `<user>@<host>`.
+- Installs `~/.config/systemd/user/git-repo-sync@.service` and enables one
+  instance per repo whose `mode` isn't `none` (by creating the
+  `default.target.wants` link, so it works with no user session).
+
+If a clone fails, or an existing clone's alias can't reach GitHub yet (the key
+isn't registered, or no network), the play
+stops for that host and prints a `gh repo deploy-key add` command per key,
+read-write when `writable` is true. The role never registers keys itself.
+
+## The login service (`/usr/local/libexec/git-repo-sync`)
+
+| mode | at login |
+|---|---|
+| `pull` | skip if the clone has uncommitted changes, else `pull --ff-only`, then `after_pull` |
+| `sync` | commit everything (`<name> sync from <host> (<date>)`), `pull --rebase`, `push`, then `after_pull` |
+
+It never forces anything:
+- Offline, or a key GitHub doesn't know: a line in the journal, exit 0.
+- A rebase, merge, cherry-pick or revert in progress, or unmerged files: it
+  does nothing.
+- A commit that fails (a hook, say): it unstages again and notifies.
+- A pull that conflicts or a push that fails: the rebase is aborted, its own
+  commit is undone (the changes are back as uncommitted edits), and a
+  desktop notification says so. The next login tries again.
+
+## Variables
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `git_repo_sync_user` | `ansible_facts.user_id` | owner of the clones, keys and units |
+| `git_repo_sync_repos` | `[]` | list of `{name, github, dest, mode, writable, after_pull, interval, git_exclude}` |
+| `git_repo_sync_git_name`, `git_repo_sync_git_email` | `""` | identity for `sync` clones' commits |
+| `git_repo_sync_github_host_key` | GitHub's ed25519 key | pinned in `~/.ssh/known_hosts` |
+| `git_repo_sync_script` | `/usr/local/libexec/git-repo-sync` | where the login script goes |
+
+`dest` may start with `~`; it is expanded to the user's home.
+
+## Example
+
+```yaml
+- hosts: laptops
+  become: true
+  roles:
+    - role: danmwallace.linux.git_repo_sync
+      vars:
+        git_repo_sync_user: dwallace
+        git_repo_sync_repos:
+          - { name: obsidian, github: danmwallace/obsidian, dest: ~/Notebook, mode: sync, writable: true }
+          - { name: claude-config, github: danmwallace/claude-config, dest: ~/.local/share/claude-config,
+              mode: pull, after_pull: "~/.local/share/claude-config/apply" }
+```
+
+### Optional per repo
+
+- `interval: 15min` (1–59 minutes) also runs the sync on a user timer,
+  `OnCalendar=*:0/15` with `Persistent=true`, so a run missed while the machine
+  slept happens right after it wakes. Without it, the sync runs only at login.
+- `git_exclude: [patterns]` adds a managed block to the clone's
+  `.git/info/exclude` (local, never committed), e.g. Syncthing's temporary files
+  when the clone also lives in a Syncthing folder.
+
+## Gotchas
+
+- The service runs once per login. It waits up to 60 s for NetworkManager to
+  report a connection, then skips quietly if origin is still unreachable.
+- `writable` only changes the printed `gh` command. GitHub enforces
+  read-only versus read-write on the key.
+- A deploy key is per repo: GitHub refuses to register the same public key
+  on two repos, which is why each repo gets its own.
+
+## Tests
+
+```bash
+bash roles/git_repo_sync/tests/test-sync.sh   # the login script
+cd roles/git_repo_sync && molecule test        # the role (podman)
+```

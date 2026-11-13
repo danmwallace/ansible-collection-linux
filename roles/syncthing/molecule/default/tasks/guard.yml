@@ -1,0 +1,20 @@
+---
+- name: Try the role with one thing wrong
+  block:
+    - name: Include syncthing
+      ansible.builtin.include_role:
+        name: danmwallace.linux.syncthing
+      vars:
+        syncthing_user: dev
+        syncthing_folders: ["{{ syncthing_verify_case.folder | default(syncthing_verify_folder) }}"]
+        syncthing_hub: "{{ syncthing_verify_hub | combine(syncthing_verify_case.hub) }}"
+    - name: Fail if the role carried on
+      ansible.builtin.fail:
+        msg: "the role should have stopped: {{ syncthing_verify_case.case }}"
+  rescue:
+    - name: Check it stopped for the right reason
+      ansible.builtin.assert:
+        that:
+          - syncthing_verify_case.expect in (ansible_failed_result.msg | default(''))
+        fail_msg: "{{ syncthing_verify_case.case }}: {{ ansible_failed_result.msg | default('?') }}"
+        quiet: true

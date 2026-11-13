@@ -1,0 +1,28 @@
+---
+# One Syncthing REST call: syncthing_call = {method, path, body (optional), ok: [codes]}.
+# It carries the API key, so the call itself is never logged; a failure is reported with
+# its status and path only. Runs where syncthing_api.delegate says, never as root.
+- name: Call the API on {{ syncthing_api.label }}
+  ansible.builtin.uri:
+    url: "{{ syncthing_api.url }}/rest/{{ syncthing_call.path }}"
+    method: "{{ syncthing_call.method | default('GET') }}"
+    headers: { X-API-Key: "{{ syncthing_api.key }}" }
+    validate_certs: "{{ not syncthing_api.pinned }}"
+    body_format: json
+    body: "{{ syncthing_call.body | default(omit) }}"
+    status_code: "{{ syncthing_call.ok | default([200]) }}"
+  register: syncthing_response
+  delegate_to: "{{ syncthing_api.delegate }}"
+  become: false
+  failed_when: false
+  changed_when: syncthing_call.method | default('GET') != 'GET'
+  check_mode: false
+  no_log: true
+
+- name: Stop when the API answered something else
+  ansible.builtin.fail:
+    msg: >-
+      {{ syncthing_api.label }}: {{ syncthing_call.method | default('GET') }} /rest/{{ syncthing_call.path }}
+      answered {{ syncthing_response.status | default('nothing') }}
+      {{ (syncthing_response.msg | default('')) if (syncthing_response.status | default(-1)) == -1 else '' }}
+  when: (syncthing_response.status | default(-1)) not in (syncthing_call.ok | default([200]))
