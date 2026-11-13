@@ -235,7 +235,8 @@
         msg: |-
           Can't reach {{ git_repo_sync_refused_names }} through its deploy key: GitHub doesn't know the key yet, or there is no network.
           git said: {{ git_repo_sync_git_said }}
-          If a key isn't registered yet, register it (Dan approves each), then run the play again:
+          If a key isn't registered yet, register it, then run the play again. The key files are on {{ inventory_hostname }}:
+          run these there, or copy the .pub files to a machine where gh is logged in.
           {% for repo in git_repo_sync_refused %}
           {% set write = ' --allow-write' if repo.writable | default(false) else '' %}
           # {{ repo.github }} ({{ 'read-write' if write else 'read-only' }})

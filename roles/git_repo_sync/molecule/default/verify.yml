@@ -90,6 +90,7 @@
               - "'--allow-write' in ansible_failed_result.msg"
               - "'gh repo deploy-key add /home/dev/.ssh/deploy_missing_ed25519.pub' in ansible_failed_result.msg"
               - "'<<<' not in ansible_failed_result.msg"
+              - "'key files are on git-repo-sync-instance' in ansible_failed_result.msg"
             quiet: true
 
 - name: Verify an existing clone keeps its origin when its new key isn't registered yet
