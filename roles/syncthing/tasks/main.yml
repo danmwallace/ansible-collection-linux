@@ -1,16 +1,28 @@
 ---
+# Checked without the API key in view, so a failure can say what is wrong.
 - name: Ensure the hub and every folder are described
   ansible.builtin.assert:
     that:
-      - syncthing_hub.device_id | default('') is match('^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$')
-      - syncthing_hub.address | default('') is match('^(tcp|quic)://')
-      - syncthing_hub.api_url | default('') is match('^https?://')
-      - syncthing_hub.api_key | default('') | length > 0
-      - syncthing_folders | map(attribute='id') | list | length == syncthing_folders | length
-      - syncthing_folders | rejectattr('id', 'in', (syncthing_hub.folder_paths | default({})).keys() | list) | list | length == 0
-    fail_msg: "syncthing_hub needs device_id, address, api_url, api_key and a folder_paths entry for every folder"
+      - syncthing_hub_check.device_id is match('^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$')
+      - syncthing_hub_check.address is match('^(tcp|quic)://')
+      - syncthing_hub_check.api_url is match('^https?://')
+      - syncthing_folders | map(attribute='id') | list | unique | length == syncthing_folders | length
+      - syncthing_folders | rejectattr('id', 'in', syncthing_hub_check.folder_ids) | list | length == 0
+    fail_msg: >-
+      syncthing_hub needs device_id, address (tcp://...), api_url (http(s)://...) and a folder_paths
+      entry for every folder; got {{ syncthing_hub_check }}
     quiet: true
-  no_log: true  # the hub's API key
+  vars:
+    syncthing_hub_check:
+      device_id: "{{ syncthing_hub.device_id | default('') }}"
+      address: "{{ syncthing_hub.address | default('') }}"
+      api_url: "{{ syncthing_hub.api_url | default('') }}"
+      folder_ids: "{{ (syncthing_hub.folder_paths | default({})).keys() | list }}"
+
+- name: Stop when the hub's API key is missing
+  ansible.builtin.fail:
+    msg: "syncthing_hub.api_key is empty; put the hub's API key in ansible-vault and pass it in."
+  when: syncthing_hub.api_key | default('') | length == 0
 
 - name: Look up the user
   ansible.builtin.getent:
