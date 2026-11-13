@@ -7,8 +7,17 @@ repo current across laptops without a personal GitHub credential on each one.
 
 ## What it does, per repo
 
-- Creates `~/.ssh/deploy_<name>_ed25519` if absent, and an `~/.ssh/config`
-  alias `github-<name>` that uses only that key. GitHub's host key is pinned.
+- Creates `~/.ssh/deploy_<name>_ed25519` if absent, and an alias
+  `github-<name>` for it in `~/.ssh/git-repo-sync.conf`, a file only these
+  clones read (`core.sshCommand = ssh -F ...`): no agent, no prompts, GitHub's
+  host key pinned. It isn't in `~/.ssh/config` because ssh adds every
+  `IdentityFile` that matches; on Fedora, `Match final` even re-applies a
+  `Host github.com` block to the alias, so a personal key would quietly be
+  used instead of the deploy key. An older managed block in `~/.ssh/config` is
+  removed.
+- Checks on every run that each clone reaches GitHub with its deploy key alone,
+  and stops with the keys to register if one doesn't (new, unregistered or
+  revoked).
 - Clones `git@github-<name>:<owner/repo>.git` to `dest` if `dest` is absent.
   An existing clone is never touched, except that an `origin` pointing at the
   same repo on github.com in another form is switched to the alias, and only

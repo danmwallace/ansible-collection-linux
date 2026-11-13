@@ -33,6 +33,7 @@
   ansible.builtin.set_fact:
     git_repo_sync_home: "{{ ansible_facts.getent_passwd[git_repo_sync_user][4] }}"
     git_repo_sync_uid: "{{ ansible_facts.getent_passwd[git_repo_sync_user][1] }}"
+    git_repo_sync_ssh_config: "{{ ansible_facts.getent_passwd[git_repo_sync_user][4] }}/.ssh/git-repo-sync.conf"
 
 # Facts outlive the role on a host, so lists built up below start empty on every run.
 - name: Start this run's lists empty
@@ -76,20 +77,39 @@
         name: github.com
         key: "{{ git_repo_sync_github_host_key }}"
 
-    - name: Ensure an ssh alias per repo points at its deploy key
-      ansible.builtin.blockinfile:
-        path: "{{ git_repo_sync_home }}/.ssh/config"
-        create: true
+    # The aliases live in a file only these clones read (ssh -F), not in ~/.ssh/config: ssh
+    # adds every IdentityFile that matches, and on Fedora `Match final` re-applies a
+    # `Host github.com` block to the alias, so the user's own key would be offered too and
+    # the deploy key never used.
+    - name: Ensure the clones' own ssh config, one alias per repo with its deploy key only
+      ansible.builtin.copy:
+        dest: "{{ git_repo_sync_ssh_config }}"
         mode: "0600"
-        marker: "# {mark} ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync"
-        block: |
+        content: |
+          # Managed by danmwallace.linux.git_repo_sync; read only by its clones (ssh -F).
           {% for repo in git_repo_sync_list %}
           Host github-{{ repo.name }}
               HostName github.com
               User git
               IdentityFile {{ git_repo_sync_home }}/.ssh/deploy_{{ repo.name }}_ed25519
               IdentitiesOnly yes
+              IdentityAgent none
+              BatchMode yes
+              StrictHostKeyChecking yes
+              UserKnownHostsFile {{ git_repo_sync_home }}/.ssh/known_hosts
           {% endfor %}
+
+    - name: Check for an ~/.ssh/config
+      ansible.builtin.stat:
+        path: "{{ git_repo_sync_home }}/.ssh/config"
+      register: git_repo_sync_user_ssh_config
+
+    - name: Ensure ~/.ssh/config no longer carries the aliases an earlier version wrote there
+      ansible.builtin.blockinfile:
+        path: "{{ git_repo_sync_home }}/.ssh/config"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync"
+        state: absent
+      when: git_repo_sync_user_ssh_config.stat.exists
 
     - name: Check which clones already exist
       ansible.builtin.stat:
@@ -104,6 +124,7 @@
         repo: "git@github-{{ item.item.name }}:{{ item.item.github }}.git"
         dest: "{{ item.item.dest }}"
         update: false
+        ssh_opts: "-F {{ git_repo_sync_ssh_config }}"
       loop: "{{ git_repo_sync_existing.results }}"
       loop_control:
         label: "{{ item.item.name }}"
@@ -144,16 +165,19 @@
           ^(git@github\.com:|ssh://git@github\.com/|https://github\.com/){{ item.item.item.github | regex_escape }}(\.git)?/?$
       when: item.config_value is match(git_repo_sync_same_repo)
 
-    # An existing clone is only switched once its alias works: a deploy key GitHub
-    # doesn't know yet would otherwise cut the clone off (and its key would go unlisted).
-    - name: Check that each alias reaches GitHub before its clone is switched to it
+    # Every clone's alias must reach GitHub with its deploy key alone, on every run: a key
+    # GitHub doesn't know (or one revoked) stops the play and is listed for registering.
+    # An existing clone is only switched to its alias once that alias works.
+    - name: Check that each repo's alias reaches GitHub with its deploy key
       ansible.builtin.command:
-        cmd: timeout 20 git ls-remote --exit-code git@github-{{ item.name }}:{{ item.github }}.git HEAD
+        cmd: timeout 20 git ls-remote --exit-code git@github-{{ item.item.name }}:{{ item.item.github }}.git HEAD
       environment:
-        GIT_SSH_COMMAND: ssh -o BatchMode=yes
-      loop: "{{ git_repo_sync_to_switch }}"
+        GIT_SSH_COMMAND: "ssh -F {{ git_repo_sync_ssh_config }}"
+      loop: >-
+        {{ (git_repo_sync_existing.results if ansible_check_mode else git_repo_sync_after.results)
+           | selectattr('stat.exists') | list }}
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.item.name }}"
       register: git_repo_sync_alias_check
       changed_when: false
       failed_when: false
@@ -162,10 +186,24 @@
     - name: Ensure existing clones whose alias works use it (no files or history change)
       community.general.git_config:
         scope: local
-        repo: "{{ item.item.dest }}"
+        repo: "{{ item.item.item.dest }}"
         name: remote.origin.url
-        value: "git@github-{{ item.item.name }}:{{ item.item.github }}.git"
-      loop: "{{ git_repo_sync_alias_check.results | default([]) | selectattr('rc', 'eq', 0) | list }}"
+        value: "git@github-{{ item.item.item.name }}:{{ item.item.item.github }}.git"
+      loop: >-
+        {{ git_repo_sync_alias_check.results | default([]) | selectattr('rc', 'eq', 0)
+           | selectattr('item.item.name', 'in', git_repo_sync_to_switch | map(attribute='name') | list) | list }}
+      loop_control:
+        label: "{{ item.item.item.name }}"
+
+    - name: Ensure each clone uses only its own ssh config
+      community.general.git_config:
+        scope: local
+        repo: "{{ item.item.dest }}"
+        name: core.sshCommand
+        value: "ssh -F {{ git_repo_sync_ssh_config }}"
+      loop: >-
+        {{ (git_repo_sync_existing.results if ansible_check_mode else git_repo_sync_after.results)
+           | selectattr('stat.exists') | list }}
       loop_control:
         label: "{{ item.item.name }}"
 
@@ -199,7 +237,7 @@
         git_repo_sync_refused_names: "{{ git_repo_sync_refused | map(attribute='github') | join(', ') }}"
         git_repo_sync_refused: >-
           {{ (git_repo_sync_after.results | rejectattr('stat.exists') | map(attribute='item') | list)
-             + (git_repo_sync_alias_check.results | default([]) | rejectattr('rc', 'eq', 0) | map(attribute='item') | list) }}
+             + (git_repo_sync_alias_check.results | default([]) | rejectattr('rc', 'eq', 0) | map(attribute='item.item') | list) }}
         git_repo_sync_git_said: >-
           {{ ((git_repo_sync_clone.results | selectattr('msg', 'defined') | map(attribute='msg') | list)
               + (git_repo_sync_alias_check.results | default([]) | rejectattr('rc', 'eq', 0) | map(attribute='stderr') | list))

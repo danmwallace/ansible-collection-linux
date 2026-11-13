@@ -11,10 +11,33 @@
         create_home: true
         shell: /bin/bash
 
+    - name: Ensure dev's ~/.ssh exists
+      ansible.builtin.file:
+        path: /home/dev/.ssh
+        state: directory
+        owner: dev
+        mode: "0700"
+
     - name: Ensure dev's user manager runs (the laptop user is logged in)
       ansible.builtin.command:
         cmd: loginctl enable-linger dev
         creates: /var/lib/systemd/linger/dev
+
+    # An ~/.ssh/config of the user's own, with the managed block an earlier version of the
+    # role wrote there: the block goes, the user's lines stay.
+    - name: Give dev an ~/.ssh/config with an old managed block
+      ansible.builtin.copy:
+        dest: /home/dev/.ssh/config
+        owner: dev
+        mode: "0600"
+        content: |
+          Host github.com
+              IdentityFile ~/.ssh/id_ed25519
+          # BEGIN ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync
+          Host github-old
+              HostName github.com
+          # END ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync
+        force: false
 
     - name: Ensure the bare repos exist with one commit each
       ansible.builtin.shell:
@@ -45,6 +68,7 @@
               insteadOf = git@github.com:
           [url "/srv/git/nowhere/"]
               insteadOf = git@github-existing2:
+              insteadOf = git@github-existing3:
           [safe]
               directory = *
 

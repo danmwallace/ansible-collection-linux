@@ -10,11 +10,20 @@
           h=/home/dev
           for n in vault config existing; do
             test "$(stat -c '%a %U' $h/.ssh/deploy_${n}_ed25519)" = "600 dev"
-            grep -qx "Host github-$n" $h/.ssh/config
+            grep -qx "Host github-$n" $h/.ssh/git-repo-sync.conf
           done
-          grep -q "IdentityFile $h/.ssh/deploy_vault_ed25519" $h/.ssh/config
-          grep -q "BEGIN ANSIBLE MANAGED BLOCK danmwallace.linux.git_repo_sync" $h/.ssh/config
-          test "$(stat -c %a $h/.ssh/config)" = 600
+          c=$h/.ssh/git-repo-sync.conf
+          grep -q "IdentityFile $h/.ssh/deploy_vault_ed25519" $c
+          grep -qx "    IdentityAgent none" $c
+          grep -qx "    BatchMode yes" $c
+          grep -qx "    StrictHostKeyChecking yes" $c
+          test "$(stat -c '%a %U' $c)" = "600 dev"
+          ! grep -q "danmwallace.linux.git_repo_sync" $h/.ssh/config
+          grep -qx "Host github.com" $h/.ssh/config
+          for n in vault existing; do
+            test "$(git -C $h/$n config --get core.sshCommand)" = "ssh -F $c"
+          done
+          test "$(git -C $h/.local/share/config config --get core.sshCommand)" = "ssh -F $c"
           test -x /usr/local/libexec/git-repo-sync
           test -f $h/.config/systemd/user/git-repo-sync@.service
           test "$(readlink $h/.config/systemd/user/default.target.wants/git-repo-sync@vault.service)" = ../git-repo-sync@.service
@@ -120,3 +129,37 @@
         that:
           - git_repo_sync_verify_origin2.config_value == 'git@github.com:owner/existing2.git'
         quiet: true
+
+- name: Verify an existing clone already on its alias stops the run when the alias fails
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Ensure a clone whose alias origin can't be reached
+      become: true
+      become_user: dev
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          git clone -q /srv/git/owner/existing.git /home/dev/existing3
+          git -C /home/dev/existing3 remote set-url origin git@github-existing3:owner/existing3.git
+        executable: /bin/bash
+        creates: /home/dev/existing3
+
+    - name: Apply the role to it
+      block:
+        - name: Include git_repo_sync with existing3
+          ansible.builtin.include_role:
+            name: danmwallace.linux.git_repo_sync
+          vars:
+            git_repo_sync_user: dev
+            git_repo_sync_repos:
+              - { name: existing3, github: owner/existing3, dest: /home/dev/existing3, mode: sync }
+        - name: Fail if the role carried on
+          ansible.builtin.fail:
+            msg: the role should have stopped with existing3's key to register
+      rescue:
+        - name: Check the message lists existing3's key
+          ansible.builtin.assert:
+            that:
+              - "'gh repo deploy-key add /home/dev/.ssh/deploy_existing3_ed25519.pub' in ansible_failed_result.msg"
+            quiet: true
