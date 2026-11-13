@@ -34,6 +34,9 @@
           grep -qx 'Persistent=true' $u/git-repo-sync@vault.timer
           test "$(readlink $u/timers.target.wants/git-repo-sync@vault.timer)" = ../git-repo-sync@vault.timer
           ! test -e $u/git-repo-sync@config.timer
+          test "$(stat -c %a $u/default.target.wants)" = 755
+          test "$(stat -c %a $u/timers.target.wants)" = 755
+          runuser -u dev -- env XDG_RUNTIME_DIR=/run/user/$(id -u dev) systemctl --user is-active git-repo-sync@vault.timer
           ! test -e $u/timers.target.wants/git-repo-sync@config.timer
           grep -qxF '.syncthing.*.tmp' $h/vault/.git/info/exclude
           grep -qxF '.stversions/' $h/vault/.git/info/exclude

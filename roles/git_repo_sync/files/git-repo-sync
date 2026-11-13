@@ -9,7 +9,8 @@
 #   - origin unreachable (offline, or a key GitHub doesn't know): a line on stderr, exit 0
 #   - a rebase, merge, cherry-pick or revert in progress, or unmerged files (you are
 #     working in the clone): exit 0
-#   - a sync whose commit fails or whose pull conflicts: the rebase is aborted and the
+#   - usually nothing new is on origin: the sync commits and pushes, no rebase at all
+#   - a sync whose commit fails or whose rebase conflicts: the rebase is aborted and the
 #     sync's own commit undone (your changes are back as uncommitted edits), a desktop
 #     notification says so, exit 0; the next login tries again
 #   - a push that fails after a clean rebase: the rebased commit stays for the next
@@ -26,7 +27,7 @@ name=$1 dest=$2 mode=$3 after_pull=${4:-}
 say() { echo "git-repo-sync ${name}: $*" >&2; }
 notify() { command -v notify-send >/dev/null 2>&1 && notify-send -a git-repo-sync -u critical "${name} sync needs you" "$1"; say "$1"; }
 
-git_dir=$(git -C "$dest" rev-parse --absolute-git-dir 2>/dev/null) || { say "${dest} is not a git clone"; exit 1; }
+git_dir=$(git -C "$dest" rev-parse --absolute-git-dir 2>/dev/null) || { notify "${dest} is not a git clone any more"; exit 1; }
 cd "$dest" || exit 1
 
 exec 9>"${git_dir}/git-repo-sync.lock"
@@ -91,12 +92,28 @@ undo() {  # put the clone back as it was before this run
     fi
 }
 
-if ! out=$(git pull --rebase --quiet 2>&1); then
+# Fetch first. Usually nothing new arrived (only this machine commits), and the sync just
+# pushes: no rebase, so files Syncthing or an editor write meanwhile are left alone.
+if ! out=$(git fetch --quiet origin 2>&1); then
     undo
-    notify "$(grep -m1 CONFLICT <<<"$out" || head -1 <<<"$out")"
+    say "fetch failed: $(head -1 <<<"$out"); skipping"
     exit 0
 fi
-if [[ "$(git rev-parse HEAD)" != "$(git rev-parse '@{upstream}' 2>/dev/null)" ]]; then
+if ! upstream=$(git rev-parse --verify --quiet '@{upstream}'); then
+    undo
+    notify "the branch has no upstream to sync with"
+    exit 0
+fi
+if [[ -n "$(git rev-list HEAD.."$upstream")" ]]; then
+    # Something new on GitHub (e.g. a Hermes note): rebase onto it, carrying any edit
+    # that lands meanwhile across in an autostash instead of refusing to start.
+    if ! out=$(git rebase --quiet --autostash "$upstream" 2>&1); then
+        undo
+        notify "$(grep -m1 CONFLICT <<<"$out" || head -1 <<<"$out")"
+        exit 0
+    fi
+fi
+if [[ "$(git rev-parse HEAD)" != "$upstream" ]]; then
     if ! out=$(git push --quiet 2>&1); then
         notify "push failed: $(head -1 <<<"$out")"
         exit 0

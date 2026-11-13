@@ -11,6 +11,11 @@
         create_home: true
         shell: /bin/bash
 
+    - name: Ensure dev's user manager runs (the laptop user is logged in)
+      ansible.builtin.command:
+        cmd: loginctl enable-linger dev
+        creates: /var/lib/systemd/linger/dev
+
     - name: Ensure the bare repos exist with one commit each
       ansible.builtin.shell:
         cmd: |

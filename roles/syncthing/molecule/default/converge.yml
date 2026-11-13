@@ -7,6 +7,11 @@
       ansible.builtin.slurp:
         src: /root/hub-id
       register: syncthing_converge_hub_id
+
+    - name: Read the stand-in NAS's certificate fingerprint
+      ansible.builtin.slurp:
+        src: /root/hub-fp
+      register: syncthing_converge_hub_fp
   tasks:
     - name: Apply syncthing with test values
       ansible.builtin.include_role:
@@ -23,6 +28,7 @@
           name: test-nas
           device_id: "{{ syncthing_converge_hub_id.content | b64decode | trim }}"
           address: tcp://127.0.0.1:22001
-          api_url: http://127.0.0.1:8385
+          api_url: https://127.0.0.1:8385
+          api_fingerprint: "{{ syncthing_converge_hub_fp.content | b64decode | trim }}"
           api_key: hub-test-key
           folder_paths: { syncthing: /home/nas/Syncthing }

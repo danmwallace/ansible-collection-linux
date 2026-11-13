@@ -5,18 +5,21 @@
     that:
       - syncthing_hub_check.device_id is match('^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$')
       - syncthing_hub_check.address is match('^(tcp|quic)://')
-      - syncthing_hub_check.api_url is match('^https?://')
+      - syncthing_hub_check.api_url is match('^https://') or syncthing_hub_check.api_url is match('^http://(127\\.0\\.0\\.1|localhost|\\[::1\\])[:/]')
+      - syncthing_hub_check.api_url is not match('^https://') or syncthing_hub_check.fingerprint is match('^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$')
       - syncthing_folders | map(attribute='id') | list | unique | length == syncthing_folders | length
       - syncthing_folders | rejectattr('id', 'in', syncthing_hub_check.folder_ids) | list | length == 0
     fail_msg: >-
-      syncthing_hub needs device_id, address (tcp://...), api_url (http(s)://...) and a folder_paths
-      entry for every folder; got {{ syncthing_hub_check }}
+      syncthing_hub needs device_id, address (tcp://...), an https:// api_url with api_fingerprint
+      (its certificate's SHA-256; plain http only to this machine) and a folder_paths entry for
+      every folder; got {{ syncthing_hub_check }}
     quiet: true
   vars:
     syncthing_hub_check:
       device_id: "{{ syncthing_hub.device_id | default('') }}"
       address: "{{ syncthing_hub.address | default('') }}"
       api_url: "{{ syncthing_hub.api_url | default('') }}"
+      fingerprint: "{{ syncthing_hub.api_fingerprint | default('') }}"
       folder_ids: "{{ (syncthing_hub.folder_paths | default({})).keys() | list }}"
 
 - name: Stop when the hub's API key is missing
@@ -124,26 +127,66 @@
       ansible.builtin.set_fact:
         syncthing_local_api:
           label: "{{ inventory_hostname }}"
-          url: "http://{{ (syncthing_config_xml.content | b64decode | regex_search('<gui[^>]*>[\\s\\S]*?<address>([^<]+)</address>', '\\1') | first) }}"
-          key: "{{ syncthing_config_xml.content | b64decode | regex_search('<apikey>([^<]+)</apikey>', '\\1') | first }}"
-          ca: ""
+          url: "{{ 'https' if syncthing_local_tls else 'http' }}://{{ syncthing_local_xml | regex_search(syncthing_gui_re, '\\1') | first }}"
+          key: "{{ syncthing_local_xml | regex_search('<apikey>([^<]+)</apikey>', '\\1') | first }}"
+          pinned: "{{ syncthing_local_tls }}"  # loopback: the GUI's self-signed cert isn't validated
+          delegate: "{{ inventory_hostname }}"
+          home: "{{ syncthing_home }}"
         syncthing_hub_api:
           label: "{{ syncthing_hub.name }}"
-          url: "{{ syncthing_hub.api_url }}"
+          url: "{{ syncthing_hub.api_url | regex_replace('/+$', '') }}"
           key: "{{ syncthing_hub.api_key }}"
-          ca: "{{ syncthing_hub.api_ca | default('') }}"
+          pinned: "{{ syncthing_hub.api_url is match('^https://') }}"
+          delegate: "{{ syncthing_hub.delegate_to | default(inventory_hostname) }}"
+          home: ""
+      vars:
+        syncthing_local_xml: "{{ syncthing_config_xml.content | b64decode }}"
+        syncthing_gui_re: '<gui[^>]*>[\s\S]*?<address>([^<]+)</address>'
+        syncthing_local_tls: "{{ syncthing_local_xml is search('<gui[^>]*tls=\"true\"') }}"
       no_log: true
 
     - name: Wait for the local Syncthing's API
       ansible.builtin.uri:
         url: "{{ syncthing_local_api.url }}/rest/system/ping"
         headers: { X-API-Key: "{{ syncthing_local_api.key }}" }
+        validate_certs: "{{ not syncthing_local_api.pinned }}"
       register: syncthing_ping
       until: syncthing_ping.status | default(0) == 200
       retries: 30
       delay: 1
+      become: false
       check_mode: false
       no_log: true
+
+    # Syncthing's GUI certificate is self-signed and names no IP address, so it can't be
+    # validated the usual way; its SHA-256 fingerprint is pinned instead, and checked before
+    # the key is sent.
+    - name: Check the hub's certificate against the pinned fingerprint
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail &&
+          openssl s_client -connect {{ syncthing_hub_hostport | quote }} </dev/null 2>/dev/null
+          | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2
+        executable: /bin/bash
+      vars:
+        syncthing_hub_hostport: "{{ syncthing_hub.api_url | regex_replace('^https://([^/]+).*$', '\\1') }}"
+      register: syncthing_hub_seen
+      # Spelled out (not syncthing_hub_api.delegate): delegate_to is resolved before when.
+      delegate_to: "{{ syncthing_hub.delegate_to | default(inventory_hostname) }}"
+      become: false
+      changed_when: false
+      check_mode: false
+      failed_when: false
+      when: syncthing_hub_api.pinned | bool
+
+    - name: Stop when the hub's certificate isn't the pinned one
+      ansible.builtin.fail:
+        msg: >-
+          {{ syncthing_hub.name }}'s certificate fingerprint is {{ syncthing_hub_seen.stdout | default('unreadable') }},
+          not the pinned {{ syncthing_hub.api_fingerprint }}; not sending the API key.
+      when: >-
+        syncthing_hub_api.pinned | bool and
+        (syncthing_hub_seen.stdout | default('') | upper | trim) != (syncthing_hub.api_fingerprint | upper | trim)
 
     - name: Read this machine's device ID
       become: true
@@ -167,11 +210,13 @@
           loop_control:
             label: "{{ item.id }}"
 
-        - name: Ensure each folder's .stignore
-          ansible.builtin.copy:
-            dest: "{{ item.path | regex_replace('^~(?=/|$)', syncthing_home) }}/.stignore"
-            content: "{{ (item.ignore | default([]) | join('\n')) ~ '\n' if item.ignore | default([]) else '' }}"
+        - name: Ensure each folder's .stignore holds the managed patterns (other lines are left alone)
+          ansible.builtin.blockinfile:
+            path: "{{ item.path | regex_replace('^~(?=/|$)', syncthing_home) }}/.stignore"
+            create: true
             mode: "0644"
+            marker: "// {mark} managed by danmwallace.linux.syncthing"
+            block: "{{ item.ignore | default([]) | join('\n') }}"
           loop: "{{ syncthing_folders }}"
           loop_control:
             label: "{{ item.id }}"

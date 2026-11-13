@@ -15,11 +15,13 @@
           export KEY DEV HUB
           python3 - <<'PY'
           import json, os, urllib.request
-          def get(port, key, path):
-              req = urllib.request.Request(f"http://127.0.0.1:{port}/rest/{path}", headers={"X-API-Key": key})
-              return json.load(urllib.request.urlopen(req))
+          import ssl
+          def get(port, key, path, tls=False):
+              url = f"{'https' if tls else 'http'}://127.0.0.1:{port}/rest/{path}"
+              req = urllib.request.Request(url, headers={"X-API-Key": key})
+              return json.load(urllib.request.urlopen(req, context=ssl._create_unverified_context() if tls else None))
           L = lambda p: get(8384, os.environ["KEY"], p)
-          H = lambda p: get(8385, "hub-test-key", p)
+          H = lambda p: get(8385, "hub-test-key", p, tls=True)
           dev, hub = os.environ["DEV"], os.environ["HUB"]
           d = L(f"config/devices/{hub}")
           assert d["name"] == "test-nas" and d["addresses"] == ["tcp://127.0.0.1:22001"], d
@@ -32,8 +34,12 @@
           f = H("config/folders/syncthing")
           assert f["path"] == "/home/nas/Syncthing" and dev in [x["deviceID"] for x in f["devices"]], f
           assert f["rescanIntervalS"] > 0, f
+          other = open("/root/other-id").read().strip()
+          assert other in [x["deviceID"] for x in f["devices"]], ("the existing share was lost", f)
+          assert "overlap" not in [x["id"] for x in H("config/folders")]
           PY
-          printf '(?d).git\n(?d)**/.obsidian/workspace*.json\n' | cmp - /home/dev/Syncthing/.stignore
+          grep -qxF '(?d).git' /home/dev/Syncthing/.stignore
+          grep -qxF '(?d)**/.obsidian/workspace*.json' /home/dev/Syncthing/.stignore
           test "$(stat -c %U /home/dev/Syncthing)" = dev
           test "$(readlink /home/dev/.config/systemd/user/default.target.wants/syncthing.service)" = /usr/lib/systemd/user/syncthing.service
         executable: /bin/bash
@@ -51,3 +57,67 @@
         path: /home/nas/Syncthing/hello.md
         search_regex: hello from the laptop
         timeout: 120
+
+- name: Verify the guards and that the user's own ignore lines survive
+  hosts: molecule
+  gather_facts: true
+  vars:
+    syncthing_verify_hub:
+      name: test-nas
+      device_id: "{{ syncthing_verify_hub_id.content | b64decode | trim }}"
+      address: tcp://127.0.0.1:22001
+      api_url: https://127.0.0.1:8385
+      api_key: hub-test-key
+      api_fingerprint: "{{ syncthing_verify_hub_fp.content | b64decode | trim }}"
+      folder_paths: { syncthing: /home/nas/Syncthing }
+    syncthing_verify_folder:
+      { id: syncthing, label: Syncthing, path: ~/Syncthing, type: sendreceive, ignore: ["(?d).git", "(?d)**/.obsidian/workspace*.json"] }
+  tasks:
+    - name: Read the hub's ID and fingerprint
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop: [/root/hub-id, /root/hub-fp]
+      register: syncthing_verify_reads
+
+    - name: Keep them
+      ansible.builtin.set_fact:
+        syncthing_verify_hub_id: "{{ syncthing_verify_reads.results[0] }}"
+        syncthing_verify_hub_fp: "{{ syncthing_verify_reads.results[1] }}"
+
+    - name: Add a line of the user's own to .stignore
+      ansible.builtin.lineinfile:
+        path: /home/dev/Syncthing/.stignore
+        line: my-own-pattern
+
+    - name: Run the role again
+      ansible.builtin.include_role:
+        name: danmwallace.linux.syncthing
+      vars:
+        syncthing_user: dev
+        syncthing_folders: ["{{ syncthing_verify_folder }}"]
+        syncthing_hub: "{{ syncthing_verify_hub }}"
+
+    - name: Check the user's line survived and the managed lines appear once
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          grep -qxF my-own-pattern /home/dev/Syncthing/.stignore
+          test "$(grep -cxF '(?d).git' /home/dev/Syncthing/.stignore)" = 1
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Run each guard and expect it to stop the role
+      ansible.builtin.include_tasks: tasks/guard.yml
+      loop:
+        - { case: badly formed fingerprint, hub: { api_fingerprint: "AA:BB" }, expect: api_fingerprint }
+        - case: a different certificate than the pinned one
+          hub: { api_fingerprint: "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00" }
+          expect: "not the pinned"
+        - { case: plain http to another machine, hub: { api_url: "http://10.0.0.1:8385" }, expect: https }
+        - case: a hub folder inside an existing one
+          hub: { folder_paths: { overlap: /home/nas/Old/sub } }
+          folder: { id: overlap, label: Overlap, path: ~/Overlap, type: sendreceive }
+          expect: overlaps
+      loop_control:
+        loop_var: syncthing_verify_case
+        label: "{{ syncthing_verify_case.case }}"

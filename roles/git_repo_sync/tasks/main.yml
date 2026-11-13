@@ -32,6 +32,7 @@
 - name: Set the user's home directory
   ansible.builtin.set_fact:
     git_repo_sync_home: "{{ ansible_facts.getent_passwd[git_repo_sync_user][4] }}"
+    git_repo_sync_uid: "{{ ansible_facts.getent_passwd[git_repo_sync_user][1] }}"
 
 # Facts outlive the role on a host, so lists built up below start empty on every run.
 - name: Start this run's lists empty
@@ -218,15 +219,22 @@
       loop_control:
         label: "{{ item.item.name }}"
 
-    - name: Ensure the user unit and settings directories exist
+    # 0755 like every unit directory (and like danmwallace.linux.syncthing, which shares
+    # default.target.wants: different modes would flip on every run).
+    - name: Ensure the user unit directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        mode: "0700"
+        mode: "0755"
       loop:
         - "{{ git_repo_sync_home }}/.config/systemd/user/default.target.wants"
         - "{{ git_repo_sync_home }}/.config/systemd/user/timers.target.wants"
-        - "{{ git_repo_sync_home }}/.config/git-repo-sync"
+
+    - name: Ensure the sync settings directory exists
+      ansible.builtin.file:
+        path: "{{ git_repo_sync_home }}/.config/git-repo-sync"
+        state: directory
+        mode: "0700"
 
     - name: Ensure the login sync unit template is installed
       ansible.builtin.template:
@@ -294,3 +302,37 @@
            | product(['', 'timers.target.wants/']) | list }}
       loop_control:
         label: "{{ item[1] }}git-repo-sync@{{ item[0] }}.timer"
+
+# A timer enabled by a link starts at the next login; when the user's systemd is already
+# running (the user is logged in), it is started now.
+- name: Check whether the user's systemd is running
+  ansible.builtin.stat:
+    path: "/run/user/{{ git_repo_sync_uid }}/systemd/private"
+  register: git_repo_sync_user_manager
+
+- name: Ensure the timers run now, not only from the next login
+  become: true
+  become_user: "{{ git_repo_sync_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ git_repo_sync_uid }}"
+  when: git_repo_sync_user_manager.stat.exists and not ansible_check_mode
+  block:
+    - name: Ensure each timer is started
+      ansible.builtin.systemd_service:
+        name: "git-repo-sync@{{ item.name }}.timer"
+        scope: user
+        state: started
+        daemon_reload: true
+      loop: "{{ git_repo_sync_list | selectattr('interval', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Ensure timers of repos without an interval are stopped
+      ansible.builtin.systemd_service:
+        name: "git-repo-sync@{{ item.name }}.timer"
+        scope: user
+        state: stopped
+      loop: "{{ git_repo_sync_list | rejectattr('interval', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      failed_when: false  # never loaded is fine

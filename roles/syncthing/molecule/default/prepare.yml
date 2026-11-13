@@ -36,12 +36,13 @@
         cmd: >-
           systemd-run --uid=nas --unit=st-hub -p Environment=HOME=/home/nas
           /usr/bin/syncthing serve --home /home/nas/st --no-browser --no-restart
-          --gui-address=127.0.0.1:8385 --gui-apikey=hub-test-key
+          --gui-address=https://127.0.0.1:8385 --gui-apikey=hub-test-key
         creates: /run/systemd/transient/st-hub.service
 
     - name: Wait for the stand-in NAS's API
       ansible.builtin.uri:
-        url: http://127.0.0.1:8385/rest/system/ping
+        url: https://127.0.0.1:8385/rest/system/ping
+        validate_certs: false
         headers: { X-API-Key: hub-test-key }
       register: syncthing_prepare_ping
       until: syncthing_prepare_ping.status == 200
@@ -52,3 +53,44 @@
       ansible.builtin.shell:
         cmd: runuser -u nas -- syncthing device-id --home /home/nas/st > /root/hub-id
         creates: /root/hub-id
+
+    - name: Record the stand-in NAS's certificate fingerprint
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail &&
+          openssl s_client -connect 127.0.0.1:8385 </dev/null 2>/dev/null
+          | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 > /root/hub-fp
+        executable: /bin/bash
+        creates: /root/hub-fp
+
+    # The real NAS already has devices and folders: a folder shared with another device
+    # (that share must survive), and an old folder whose path must not be overlapped.
+    - name: Give the stand-in NAS existing devices and folders
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          syncthing generate --home /root/other --no-port-probing >/dev/null
+          syncthing device-id --home /root/other > /root/other-id.tmp
+          mkdir -p /home/nas/Syncthing /home/nas/Old && chown nas: /home/nas/Syncthing /home/nas/Old
+          python3 - <<'PY'
+          import json, ssl, urllib.request
+          ctx = ssl._create_unverified_context()
+          def call(method, path, body=None):
+              req = urllib.request.Request(f"https://127.0.0.1:8385/rest/{path}", method=method,
+                                           data=json.dumps(body).encode() if body is not None else None,
+                                           headers={"X-API-Key": "hub-test-key", "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req, context=ctx) as r:
+                      text = r.read().decode()
+                      return json.loads(text) if text.strip() else None
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(f"{method} {path}: {e.code} {e.read().decode()}")
+          other = open("/root/other-id.tmp").read().strip()
+          call("PUT", f"config/devices/{other}", dict(call("GET", "config/defaults/device"), deviceID=other, name="other-laptop"))
+          d = call("GET", "config/defaults/folder")
+          for fid, path in (("syncthing", "/home/nas/Syncthing"), ("old-notebook", "/home/nas/Old")):
+              call("PUT", f"config/folders/{fid}", dict(d, id=fid, label=fid, path=path, devices=[{"deviceID": other}]))
+          PY
+          mv /root/other-id.tmp /root/other-id
+        executable: /bin/bash
+        creates: /root/other-id

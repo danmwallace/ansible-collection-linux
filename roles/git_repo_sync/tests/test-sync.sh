@@ -153,6 +153,39 @@ test_sync_skips_unmerged_index() {
     ! git -C "$T/origin.git" grep -q '<<<<<<<' main -- note.md
 }
 
+# Syncthing (or Obsidian) can change a tracked file right after the sync's commit; a
+# post-commit hook does that here.
+change_after_commit() {
+    printf '#!/bin/sh\nprintf "changed later\\n" >> note.md\n' > "$T/here/.git/hooks/post-commit"
+    chmod +x "$T/here/.git/hooks/post-commit"
+}
+
+test_sync_unchanged_origin_pushes_without_rebase() {
+    setup
+    change_after_commit
+    printf 'task\n' > "$T/here/task.md"
+    sync obsidian "$T/here" sync || return 1
+    [ ! -s "$NOTE" ] && git -C "$T/origin.git" cat-file -e main:task.md &&
+        grep -q "changed later" "$T/here/note.md"
+}
+
+test_sync_rebase_keeps_a_concurrent_edit() {
+    setup
+    other_commits from-other.md hi            # origin moved: a rebase is needed
+    change_after_commit
+    printf 'task\n' > "$T/here/task.md"
+    sync obsidian "$T/here" sync || return 1
+    [ ! -s "$NOTE" ] && git -C "$T/origin.git" cat-file -e main:task.md &&
+        [ -f "$T/here/from-other.md" ] && grep -q "changed later" "$T/here/note.md"
+}
+
+test_missing_clone_notifies() {
+    setup
+    rm -rf "$T/here/.git"
+    sync obsidian "$T/here" sync; rc=$?
+    [ "$rc" -eq 1 ] && [ "$(wc -l < "$NOTE")" -eq 1 ] && grep -q "not a git clone" "$NOTE"
+}
+
 test_bad_usage() {
     setup
     sync obsidian "$T/here" bogus >/dev/null 2>&1; [ $? -eq 2 ] || return 1
@@ -162,7 +195,9 @@ test_bad_usage() {
 for t in test_pull_fast_forward test_pull_skips_dirty test_sync_commits_pulls_pushes test_sync_nothing_to_do_is_quiet \
          test_sync_conflict_aborts_and_notifies test_offline_is_quiet test_sync_skips_rebase_in_progress \
          test_after_pull_runs_only_after_pull test_sync_without_git_identity test_failed_commit_restores_and_notifies \
-         test_sync_skips_cherry_pick_in_progress test_sync_skips_unmerged_index test_bad_usage; do
+         test_sync_skips_cherry_pick_in_progress test_sync_skips_unmerged_index \
+         test_sync_unchanged_origin_pushes_without_rebase test_sync_rebase_keeps_a_concurrent_edit test_missing_clone_notifies \
+         test_bad_usage; do
     check "$t" "$t"
 done
 echo "$pass passed"

@@ -24,6 +24,21 @@ Syncthing's REST API: this machine's own instance and the hub's.
   and shares each folder with it, creating the folder at
   `folder_paths[<id>]` if the hub doesn't have it.
 
+**The hub's API is reached safely.**
+- It must be `https://`, with its certificate's SHA-256 fingerprint pinned in
+  `api_fingerprint`. Syncthing's GUI certificate is self-signed and names no
+  IP address, so the role checks the fingerprint (`openssl s_client`) before
+  sending the key, then talks HTTPS without CA validation.
+- Plain `http://` is accepted only to this machine.
+- Hub calls run on `delegate_to` (e.g. `localhost`, the Ansible controller), so
+  the key never has to reach the laptops, and they never run as root.
+- Run the role **one host at a time** (`serial: 1`). Each host appends itself
+  to the hub's folder, and two hosts doing that at once can drop each other.
+
+**The hub only gains.** Existing devices and folders are never removed, a new
+folder whose path overlaps an existing folder is refused, and an existing
+folder at a different path stops the play.
+
 Everything reads first and writes only what differs. New devices and folders
 start from Syncthing's own defaults (`/rest/config/defaults/...`), since a
 bare object would switch off rescans and the file watcher. An existing folder
@@ -36,7 +51,7 @@ the role only reads, then reports each change a real run would make.
 |---|---|---|
 | `syncthing_user` | `ansible_user_id` | whose Syncthing this is |
 | `syncthing_folders` | `[]` | list of `{id, label, path, type, ignore}`; `path` may start with `~`; `ignore` lines go to `<path>/.stignore` |
-| `syncthing_hub` | `{}` | `{name, device_id, address, api_url, api_key, api_ca, folder_paths}` |
+| `syncthing_hub` | `{}` | `{name, device_id, address, api_url, api_key, api_fingerprint, delegate_to, folder_paths}` |
 | `syncthing_global_discovery` | `false` | this machine's global discovery |
 | `syncthing_relays` | `false` | this machine's relays |
 | `syncthing_device_name` | `inventory_hostname` | this machine's name on the hub |
@@ -54,8 +69,10 @@ the role only reads, then reports each change a real run would make.
       name: syncthing-nas
       device_id: AAAAAAA-BBBBBBB-...
       address: tcp://10.10.99.3:22000
-      api_url: http://10.10.99.3:20910
+      api_url: https://10.10.99.3:20910
+      api_fingerprint: "29:7D:...:47"     # openssl s_client ... | openssl x509 -noout -fingerprint -sha256
       api_key: "{{ vault_syncthing_nas_api_key }}"
+      delegate_to: localhost
       folder_paths: { syncthing: /var/syncthing/data }
 ```
 
@@ -67,7 +84,7 @@ the role only reads, then reports each change a real run would make.
   container, that's the path inside the container, not the dataset's mount
   point on the host.
 - Ignore patterns are per device, so the role writes `.stignore` on each
-  machine. `(?d)` lets Syncthing delete an ignored file when it would
+  machine, as a managed block; lines of your own in `.stignore` stay. `(?d)` lets Syncthing delete an ignored file when it would
   otherwise block removing a directory.
 - Global discovery and relays off means the hub must be reachable at
   `address` from wherever the machine is.
@@ -77,4 +94,6 @@ the role only reads, then reports each change a real run would make.
 ```bash
 cd roles/syncthing && molecule test              # podman: a laptop user and a stand-in hub in one container
 bash roles/syncthing/tests/check-verbose-log.sh  # the same at -vvvv, failing if the hub's API key is printed
+# molecule also runs the guards: a wrong or malformed fingerprint, plain http to another
+# machine, and a folder overlapping an existing one must each stop the role.
 ```
