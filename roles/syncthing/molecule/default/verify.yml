@@ -114,6 +114,7 @@
           hub: { api_fingerprint: "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00" }
           expect: "not the pinned"
         - { case: plain http to another machine, hub: { api_url: "http://10.0.0.1:8385" }, expect: https }
+        - { case: https without a pin to a self-signed hub, hub: { api_fingerprint: "" }, expect: CERTIFICATE_VERIFY_FAILED }
         - case: a hub folder inside an existing one
           hub: { folder_paths: { overlap: /home/nas/Old/sub } }
           folder: { id: overlap, label: Overlap, path: ~/Overlap, type: sendreceive }

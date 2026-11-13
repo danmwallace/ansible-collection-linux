@@ -25,10 +25,12 @@ Syncthing's REST API: this machine's own instance and the hub's.
   `folder_paths[<id>]` if the hub doesn't have it.
 
 **The hub's API is reached safely.**
-- It must be `https://`, with its certificate's SHA-256 fingerprint pinned in
-  `api_fingerprint`. Syncthing's GUI certificate is self-signed and names no
-  IP address, so the role checks the fingerprint (`openssl s_client`) before
-  sending the key, then talks HTTPS without CA validation.
+- It must be `https://`. A CA-signed certificate reached by a name it covers
+  is validated the usual way: leave `api_fingerprint` empty.
+- For Syncthing's own self-signed GUI certificate, which names no IP address,
+  pin its SHA-256 in `api_fingerprint`. The role checks it (`openssl
+  s_client`) before sending the key, then talks HTTPS without CA validation.
+  A pin breaks when the certificate is renewed, so prefer a CA-signed one.
 - Plain `http://` is accepted only to this machine.
 - Hub calls run on `delegate_to` (e.g. `localhost`, the Ansible controller), so
   the key never has to reach the laptops, and they never run as root.
@@ -69,8 +71,7 @@ the role only reads, then reports each change a real run would make.
       name: syncthing-nas
       device_id: AAAAAAA-BBBBBBB-...
       address: tcp://10.10.99.3:22000
-      api_url: https://10.10.99.3:20910
-      api_fingerprint: "29:7D:...:47"     # openssl s_client ... | openssl x509 -noout -fingerprint -sha256
+      api_url: https://nas.danwallace.cloud:20910   # CA-signed (*.danwallace.cloud): validated normally
       api_key: "{{ vault_syncthing_nas_api_key }}"
       delegate_to: localhost
       folder_paths: { syncthing: /var/syncthing/data }

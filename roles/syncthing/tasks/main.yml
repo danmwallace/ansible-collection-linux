@@ -6,13 +6,13 @@
       - syncthing_hub_check.device_id is match('^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$')
       - syncthing_hub_check.address is match('^(tcp|quic)://')
       - syncthing_hub_check.api_url is match('^https://') or syncthing_hub_check.api_url is match('^http://(127\\.0\\.0\\.1|localhost|\\[::1\\])[:/]')
-      - syncthing_hub_check.api_url is not match('^https://') or syncthing_hub_check.fingerprint is match('^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$')
+      - syncthing_hub_check.fingerprint == '' or syncthing_hub_check.fingerprint is match('^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$')
       - syncthing_folders | map(attribute='id') | list | unique | length == syncthing_folders | length
       - syncthing_folders | rejectattr('id', 'in', syncthing_hub_check.folder_ids) | list | length == 0
     fail_msg: >-
-      syncthing_hub needs device_id, address (tcp://...), an https:// api_url with api_fingerprint
-      (its certificate's SHA-256; plain http only to this machine) and a folder_paths entry for
-      every folder; got {{ syncthing_hub_check }}
+      syncthing_hub needs device_id, address (tcp://...), an https:// api_url (plain http only to
+      this machine; api_fingerprint, if set, is the certificate's SHA-256 as AA:BB:...) and a
+      folder_paths entry for every folder; got {{ syncthing_hub_check }}
     quiet: true
   vars:
     syncthing_hub_check:
@@ -136,7 +136,7 @@
           label: "{{ syncthing_hub.name }}"
           url: "{{ syncthing_hub.api_url | regex_replace('/+$', '') }}"
           key: "{{ syncthing_hub.api_key }}"
-          pinned: "{{ syncthing_hub.api_url is match('^https://') }}"
+          pinned: "{{ syncthing_hub.api_url is match('^https://') and (syncthing_hub.api_fingerprint | default('') | length > 0) }}"
           delegate: "{{ syncthing_hub.delegate_to | default(inventory_hostname) }}"
           home: ""
       vars:
@@ -158,9 +158,9 @@
       check_mode: false
       no_log: true
 
-    # Syncthing's GUI certificate is self-signed and names no IP address, so it can't be
-    # validated the usual way; its SHA-256 fingerprint is pinned instead, and checked before
-    # the key is sent.
+    # With api_fingerprint set (a self-signed GUI certificate, which names no IP address),
+    # that SHA-256 is checked before the key is sent and the CA isn't. Without it, the
+    # certificate is validated the usual way (e.g. a CA-signed one reached by its name).
     - name: Check the hub's certificate against the pinned fingerprint
       ansible.builtin.shell:
         cmd: >-
