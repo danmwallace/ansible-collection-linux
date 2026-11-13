@@ -5,6 +5,12 @@
   hosts: molecule
   gather_facts: false
   tasks:
+    # On a bootc image /usr/local is /var/usrlocal and starts nearly empty.
+    - name: Remove /usr/local/libexec as on a fresh bootc machine
+      ansible.builtin.file:
+        path: /usr/local/libexec
+        state: absent
+
     - name: Ensure the test user exists
       ansible.builtin.user:
         name: dev

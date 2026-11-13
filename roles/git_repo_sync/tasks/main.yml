@@ -16,6 +16,15 @@
   loop_control:
     label: "{{ item.name | default('?') }}"
 
+# On a bootc image /usr/local is /var/usrlocal and starts without libexec.
+- name: Ensure the script's directory exists
+  ansible.builtin.file:
+    path: "{{ git_repo_sync_script | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Ensure the login sync script is installed
   ansible.builtin.copy:
     src: git-repo-sync
