@@ -31,9 +31,10 @@ mains power or reachable to the NAS — see
 - `restic`, `sqlite` (if `restic_backup_sqlite_dbs` is used) and
   `btrfs-progs` (if `restic_backup_btrfs_snapshot_subvolumes` is used) are
   installed by the role itself (via the `package` module); no
-  pre-installation needed. On an image-based host (bootc, rpm-ostree)
-  the `package` module cannot install anything, so the image must already
-  ship them; the task is then a no-op.
+  pre-installation needed. On an image-based host (bootc, rpm-ostree) the
+  role installs nothing (`restic_backup_install_packages` defaults to
+  `false` there) and the **OS image must provide** the binaries; see
+  [Gotchas](#gotchas).
 
 ## Role Variables
 
@@ -64,6 +65,7 @@ mains power or reachable to the NAS — see
 | `restic_backup_require_ac_power` | bool | no | `false` | Add `ConditionACPower=true` to the service so runs are skipped on battery. For laptops. |
 | `restic_backup_kuma_push_url` | str | no | `""` | Uptime Kuma push URL, without a query string. Pinged only after a fully successful run. Empty disables it. **Supply from vault.** |
 | `restic_backup_timer_enabled` | bool | no | `true` | Enable and start the timer. `false` installs the units but leaves the timer disabled and stopped; see [Reinstalling a host](#reinstalling-a-host). |
+| `restic_backup_install_packages` | bool | no | `false` on image-based hosts (`ansible_facts.pkg_mgr == 'atomic_container'`), else `true` | Install `restic` (and `sqlite` / `btrfs-progs` when used) with the `package` module. When `false`, the role only checks that `restic` (and `sqlite3` / `btrfs` when used) is on the `PATH` and fails naming the missing binary. |
 
 Restore variables, read only by `tasks_from: restore` (see [Restoring](#restoring)):
 
@@ -109,7 +111,9 @@ role to provide it.
    `restic_backup_nas_host_key` and `restic_backup_paths` are all set.
 2. Installs `restic` (and `sqlite` if `restic_backup_sqlite_dbs` is
    non-empty, `btrfs-progs` if `restic_backup_btrfs_snapshot_subvolumes` is
-   non-empty).
+   non-empty). With `restic_backup_install_packages: false` (the default on
+   image-based hosts) it installs nothing and instead fails unless `restic`
+   (and `sqlite3` / `btrfs` under the same conditions) is on the `PATH`.
 3. Creates `/etc/restic-backup`, `/usr/local/libexec/restic-backup`,
    `/var/lib/restic-backup` and `/var/cache/restic-backup` (mode `0700`).
 4. Generates a dedicated ed25519 SSH keypair at `restic_backup_ssh_key_path`
@@ -295,6 +299,19 @@ sudo bash -c 'set -a; . /etc/restic-backup/restic-backup.env; set +a; restic dum
 
 ## Gotchas
 
+- On an image-based host (bootc, rpm-ostree), `ansible_facts.pkg_mgr` is
+  `atomic_container`, and the `package` module dispatches to the
+  deprecated `community.general.atomic_container` module, which fails with
+  "missing required arguments: backend, image". Forcing
+  `ansible_package_use: dnf5` (or `dnf`) doesn't help: `/usr` is read-only
+  and the dnf Python bindings aren't there. So `restic_backup_install_packages`
+  defaults to `false` on those hosts and **the image must provide**
+  `restic`, plus `sqlite3` (package `sqlite`) if `restic_backup_sqlite_dbs`
+  is used and `btrfs` (package `btrfs-progs`) if
+  `restic_backup_btrfs_snapshot_subvolumes` is used. The role fails early
+  with a message naming any that are missing. The default reads
+  `ansible_facts.pkg_mgr`, so the play needs facts gathered (or set the
+  variable explicitly).
 - `restic_backup_password` must be letters and digits only. It is written
   unquoted into a systemd `EnvironmentFile`
   (`/etc/restic-backup/restic-backup.env`); other characters (spaces,

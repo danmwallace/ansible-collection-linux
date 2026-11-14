@@ -143,6 +143,14 @@ argument_specs:
             new home and make it the repository's latest snapshot.
         type: bool
         default: true
+      restic_backup_install_packages:
+        description:
+          - Install restic, and sqlite or btrfs-progs when they are used, with the package module.
+          - Defaults to false on image-based hosts (bootc, rpm-ostree), where ansible_facts.pkg_mgr is
+            atomic_container and the package module cannot install anything. The role then only checks
+            that restic (sqlite3, btrfs when used) is on the PATH and fails naming what the image lacks.
+        type: bool
+        default: "{{ ansible_facts.pkg_mgr != 'atomic_container' }}"
   restore:
     short_description: Restore a path from a restic snapshot into a target directory.
     description:

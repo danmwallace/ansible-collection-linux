@@ -4,3 +4,9 @@ _restic_backup_env:
   RESTIC_REPOSITORY: "{{ restic_backup_repository }}"
   RESTIC_PASSWORD: "{{ restic_backup_password }}"
   RESTIC_CACHE_DIR: /var/cache/restic-backup
+# Binaries the role and its backup script call, checked when
+# restic_backup_install_packages is false; package is named in the error.
+_restic_backup_required_binaries: >-
+  {{ [{'bin': 'restic', 'package': 'restic'}]
+     + ([{'bin': 'sqlite3', 'package': 'sqlite'}] if restic_backup_sqlite_dbs | length > 0 else [])
+     + ([{'bin': 'btrfs', 'package': 'btrfs-progs'}] if restic_backup_btrfs_snapshot_subvolumes | length > 0 else []) }}

@@ -372,3 +372,72 @@
       ansible.builtin.assert:
         that: _timer_off.stdout_lines | sort == ['disabled', 'inactive']
         fail_msg: "timer: {{ _timer_off.stdout_lines }}"
+
+    # --- restic_backup_install_packages: false (image-based hosts such as bootc) ---
+    # Take btrfs away entirely: the real one converge installed and the fake
+    # from prepare. If the install tasks still ran with the switch off, they
+    # would put btrfs-progs back and the role would not fail.
+    - name: Ensure btrfs-progs is absent for the image-based host checks
+      ansible.builtin.package:
+        name: btrfs-progs
+        state: absent
+
+    - name: Hide the fake btrfs
+      ansible.builtin.command:
+        cmd: mv /usr/local/sbin/btrfs /usr/local/sbin/btrfs.hidden
+        removes: /usr/local/sbin/btrfs
+
+    - name: Apply the role without package installs while btrfs is missing
+      block:
+        - name: Run the role expected to fail (no btrfs)
+          ansible.builtin.include_role:
+            name: danmwallace.linux.restic_backup
+          vars:
+            restic_backup_install_packages: false
+        - name: Record that the missing binary was not caught
+          ansible.builtin.set_fact:
+            _nopkg_failed: false
+      rescue:
+        - name: Record that the missing binary failed the play
+          ansible.builtin.set_fact:
+            _nopkg_failed: true
+            _nopkg_msg: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Check whether a btrfs came back
+      ansible.builtin.command:
+        argv: [sh, -c, command -v btrfs]
+      register: _nopkg_btrfs
+      changed_when: false
+      failed_when: false
+
+    - name: Assert a missing binary fails the role, naming it and the image
+      ansible.builtin.assert:
+        that:
+          - _nopkg_failed
+          - "'btrfs (package btrfs-progs)' in _nopkg_msg"
+          - "'image must provide' in _nopkg_msg"
+          - "'restic (' not in _nopkg_msg"
+          - "'sqlite3' not in _nopkg_msg"
+          - _nopkg_btrfs.rc != 0
+        fail_msg: "failed: {{ _nopkg_failed }}, msg: {{ _nopkg_msg | default('') }}, btrfs: {{ _nopkg_btrfs.stdout }}"
+
+    - name: Apply the role without package installs or btrfs snapshots
+      # btrfs is only required when snapshots are configured.
+      ansible.builtin.include_role:
+        name: danmwallace.linux.restic_backup
+      vars:
+        restic_backup_install_packages: false
+        restic_backup_btrfs_snapshot_subvolumes: []
+
+    - name: Restore the fake btrfs
+      ansible.builtin.command:
+        cmd: mv /usr/local/sbin/btrfs.hidden /usr/local/sbin/btrfs
+        removes: /usr/local/sbin/btrfs.hidden
+
+    - name: Apply the role without package installs when the host has every binary
+      # The fake btrfs lives in /usr/local/sbin, so this also checks the lookup
+      # goes through PATH rather than a fixed /usr/bin.
+      ansible.builtin.include_role:
+        name: danmwallace.linux.restic_backup
+      vars:
+        restic_backup_install_packages: false
