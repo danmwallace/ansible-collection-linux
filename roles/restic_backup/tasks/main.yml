@@ -16,18 +16,54 @@
   ansible.builtin.package:
     name: restic
     state: present
+  when: restic_backup_install_packages | bool
 
 - name: Ensure sqlite is installed when SQLite databases are backed up
   ansible.builtin.package:
     name: sqlite
     state: present
-  when: restic_backup_sqlite_dbs | length > 0
+  when:
+    - restic_backup_install_packages | bool
+    - restic_backup_sqlite_dbs | length > 0
 
 - name: Ensure btrfs-progs is installed when btrfs snapshots are used
   ansible.builtin.package:
     name: btrfs-progs
     state: present
-  when: restic_backup_btrfs_snapshot_subvolumes | length > 0
+  when:
+    - restic_backup_install_packages | bool
+    - restic_backup_btrfs_snapshot_subvolumes | length > 0
+
+# With installs off (image-based hosts) nothing above ran, so fail here, naming
+# what is missing, rather than later with "restic: command not found" from a
+# task or, worse, from the nightly service.
+- name: Check which required binaries are on the PATH
+  ansible.builtin.command:
+    argv: [sh, -c, 'command -v "$1"', sh, "{{ item.bin }}"]
+  loop: "{{ _restic_backup_required_binaries }}"
+  loop_control:
+    label: "{{ item.bin }}"
+  register: _restic_backup_binary_check
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only
+  when: not (restic_backup_install_packages | bool)
+
+- name: Assert the image provides every binary the role needs
+  ansible.builtin.assert:
+    that: _restic_backup_missing_binaries | length == 0
+    fail_msg: >-
+      Not found on the PATH of {{ inventory_hostname }}:
+      {% for b in _restic_backup_missing_binaries %}{{ b.bin }} (package {{ b.package }}){{ ', ' if not loop.last }}{% endfor %}.
+      restic_backup_install_packages is false (the default on image-based hosts
+      such as bootc, where the package manager cannot install into the read-only
+      /usr), so the OS image must provide these binaries. Add them to the image,
+      or set restic_backup_install_packages to true on a host that can install packages.
+    quiet: true
+  vars:
+    _restic_backup_missing_binaries: >-
+      {{ _restic_backup_binary_check.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
+  when: not (restic_backup_install_packages | bool)
 
 - name: Ensure restic backup directories exist
   ansible.builtin.file:

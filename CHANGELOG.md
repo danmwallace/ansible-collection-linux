@@ -7,6 +7,17 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Fixed
+
+- `restic_backup`: no longer fails on image-based hosts (bootc,
+  rpm-ostree). There `ansible_facts.pkg_mgr` is `atomic_container`, and the
+  role's `package` tasks dispatched to the deprecated
+  `community.general.atomic_container` module ("missing required arguments:
+  backend, image"). The new `restic_backup_install_packages` (default:
+  `false` when `pkg_mgr` is `atomic_container`, else `true`) skips the
+  installs; the role then checks that `restic` (and `sqlite3` / `btrfs` when
+  used) is on the `PATH` and fails naming what the OS image must provide.
+
 ## [1.8.0] - 2026-11-12
 
 ### Added
