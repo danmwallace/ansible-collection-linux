@@ -6,6 +6,7 @@
     gate_ok: ["vms", "vm-info web01"]
     gate_refused: ["reboot", "vms; id", "vm-info nope", "vm-info --all", "journal evil", "vm-start web01"]
     verify_modes:
+      /home/mcp-ro: "0755"
       /usr/local/libexec/mcp-gate: "0755"
       /etc/mcp-gate.json: "0644"
       /home/mcp-ro/.ssh: "0755"
@@ -78,6 +79,7 @@
       ansible.builtin.stat:
         path: "{{ item }}"
       loop:
+        - /home/mcp-ro
         - /usr/local/libexec/mcp-gate
         - /etc/mcp-gate.json
         - /home/mcp-ro/.ssh
