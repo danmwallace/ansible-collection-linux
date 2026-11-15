@@ -99,3 +99,27 @@
           echo "local edit" > /home/dev/existing/README.md
         executable: /bin/bash
         creates: /home/dev/existing
+
+    # What an earlier run left for a repo since dropped from the list (gone): its timer,
+    # running, both wants links and its settings. The role removes these and stops the
+    # timer; a unit of someone else's whose name only contains git-repo-sync@ stays.
+    - name: Ensure units an earlier run made for a repo no longer listed
+      become: true
+      become_user: dev
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          u=/home/dev/.config/systemd/user
+          mkdir -p $u/default.target.wants $u/timers.target.wants /home/dev/.config/git-repo-sync
+          printf '[Service]\nType=oneshot\nExecStart=/bin/true\n' > $u/git-repo-sync@.service
+          printf '[Timer]\nOnCalendar=*-01-01 00:00:00\n[Install]\nWantedBy=timers.target\n' > $u/git-repo-sync@gone.timer
+          cp $u/git-repo-sync@gone.timer $u/other-git-repo-sync@gone.timer
+          ln -s ../git-repo-sync@gone.timer $u/timers.target.wants/git-repo-sync@gone.timer
+          ln -s ../git-repo-sync@.service $u/default.target.wants/git-repo-sync@gone.service
+          printf 'MODE=pull\n' > /home/dev/.config/git-repo-sync/gone.env
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          for _ in $(seq 30); do [ -S $XDG_RUNTIME_DIR/systemd/private ] && break; sleep 1; done
+          systemctl --user daemon-reload
+          systemctl --user start git-repo-sync@gone.timer
+        executable: /bin/bash
+        creates: /home/dev/.config/git-repo-sync/gone.env

@@ -15,6 +15,8 @@
 #     notification says so, exit 0; the next login tries again
 #   - a push that fails after a clean rebase: the rebased commit stays for the next
 #     login to push, with a notification
+#   - origin reachable but the fetch fails, or after_pull fails (e.g. an apply that
+#     refuses): a notification; offline alone is never one
 # A clone with no git identity commits as <user>@<host>.
 # Exit 2 on bad usage, 1 only when the clone itself is unusable.
 set -uo pipefail
@@ -51,7 +53,7 @@ fi
 
 run_after_pull() {
     [[ -n "$after_pull" ]] || return 0
-    bash -c "$after_pull" || say "after_pull failed (exit $?)"
+    bash -c "$after_pull" || notify "after_pull failed (exit $?)"
 }
 
 dirty() { [[ -n "$(git status --porcelain)" ]]; }
@@ -94,9 +96,10 @@ undo() {  # put the clone back as it was before this run
 
 # Fetch first. Usually nothing new arrived (only this machine commits), and the sync just
 # pushes: no rebase, so files Syncthing or an editor write meanwhile are left alone.
+# origin answered ls-remote above, so a failing fetch isn't just being offline.
 if ! out=$(git fetch --quiet origin 2>&1); then
     undo
-    say "fetch failed: $(head -1 <<<"$out"); skipping"
+    notify "fetch failed: $(head -1 <<<"$out")"
     exit 0
 fi
 if ! upstream=$(git rev-parse --verify --quiet '@{upstream}'); then

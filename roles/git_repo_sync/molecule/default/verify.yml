@@ -18,7 +18,7 @@
           grep -qx "    BatchMode yes" $c
           grep -qx "    StrictHostKeyChecking yes" $c
           test "$(stat -c '%a %U' $c)" = "600 dev"
-          ! grep -q "danmwallace.linux.git_repo_sync" $h/.ssh/config
+          ! grep -q "danmwallace.linux.git_repo_sync" $h/.ssh/config || exit 1
           grep -qx "Host github.com" $h/.ssh/config
           for n in vault existing; do
             test "$(git -C $h/$n config --get core.sshCommand)" = "ssh -F $c"
@@ -28,7 +28,7 @@
           test -f $h/.config/systemd/user/git-repo-sync@.service
           test "$(readlink $h/.config/systemd/user/default.target.wants/git-repo-sync@vault.service)" = ../git-repo-sync@.service
           test -L $h/.config/systemd/user/default.target.wants/git-repo-sync@config.service
-          ! test -e $h/.config/systemd/user/default.target.wants/git-repo-sync@existing.service
+          ! test -e $h/.config/systemd/user/default.target.wants/git-repo-sync@existing.service || exit 1
           grep -qx 'MODE=sync' $h/.config/git-repo-sync/vault.env
           grep -qx 'DEST="/home/dev/.local/share/config"' $h/.config/git-repo-sync/config.env
           grep -qx 'AFTER_PULL="echo \\"applied\\" > /tmp/applied"' $h/.config/git-repo-sync/config.env
@@ -42,14 +42,23 @@
           grep -qx 'OnCalendar=\*:0/15' $u/git-repo-sync@vault.timer
           grep -qx 'Persistent=true' $u/git-repo-sync@vault.timer
           test "$(readlink $u/timers.target.wants/git-repo-sync@vault.timer)" = ../git-repo-sync@vault.timer
-          ! test -e $u/git-repo-sync@config.timer
+          ! test -e $u/git-repo-sync@config.timer || exit 1
           test "$(stat -c %a $u/default.target.wants)" = 755
           test "$(stat -c %a $u/timers.target.wants)" = 755
           runuser -u dev -- env XDG_RUNTIME_DIR=/run/user/$(id -u dev) systemctl --user is-active git-repo-sync@vault.timer
-          ! test -e $u/timers.target.wants/git-repo-sync@config.timer
+          ! test -e $u/timers.target.wants/git-repo-sync@config.timer || exit 1
           grep -qxF '.syncthing.*.tmp' $h/vault/.git/info/exclude
           grep -qxF '.stversions/' $h/vault/.git/info/exclude
           test "$(git -C $h/vault config --get user.name)" = "Dev Example"
+          # gone was dropped from the list: its units and settings go, its timer stops
+          ! test -e $u/git-repo-sync@gone.timer || exit 1
+          ! test -L $u/timers.target.wants/git-repo-sync@gone.timer || exit 1
+          ! test -L $u/default.target.wants/git-repo-sync@gone.service || exit 1
+          ! test -e $h/.config/git-repo-sync/gone.env || exit 1
+          ! runuser -u dev -- env XDG_RUNTIME_DIR=/run/user/$(id -u dev) systemctl --user is-active -q git-repo-sync@gone.timer || exit 1
+          test -f $u/other-git-repo-sync@gone.timer
+          test -f $u/git-repo-sync@.service
+          test -f $h/.config/git-repo-sync/existing.env
         executable: /bin/bash
       changed_when: false
 
@@ -63,6 +72,42 @@
           /usr/local/libexec/git-repo-sync config "$DEST" "$MODE" "$AFTER_PULL"
           test "$(cat /tmp/applied)" = applied
         executable: /bin/bash
+      changed_when: false
+
+- name: Verify an interval that doesn't divide the hour is refused before anything changes
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply the role with a 7min interval
+      block:
+        - name: Include git_repo_sync with interval 7min
+          ansible.builtin.include_role:
+            name: danmwallace.linux.git_repo_sync
+          vars:
+            git_repo_sync_user: dev
+            git_repo_sync_repos:
+              - { name: vault, github: owner/vault, dest: /home/dev/vault, mode: sync, interval: 7min }
+        - name: Fail if the role carried on
+          ansible.builtin.fail:
+            msg: the role should have refused interval 7min
+      rescue:
+        - name: Check the message names the repo, the interval and what to use instead
+          ansible.builtin.assert:
+            that:
+              - "'vault' in git_repo_sync_verify_msg"
+              - "'7min' in git_repo_sync_verify_msg"
+              - "'divide 60' in git_repo_sync_verify_msg"
+              - "'15' in git_repo_sync_verify_msg"
+            quiet: true
+          vars:
+            # a looped assert: each item's message is in results
+            git_repo_sync_verify_msg: >-
+              {{ ansible_failed_result.results | default([]) | selectattr('failed', 'defined') | selectattr('failed')
+                 | map(attribute='msg') | join(' ') }}
+
+    - name: Check vault's timer still runs every 15 minutes
+      ansible.builtin.command:
+        cmd: grep -qx 'OnCalendar=\*:0/15' /home/dev/.config/systemd/user/git-repo-sync@vault.timer
       changed_when: false
 
 - name: Verify that an unregistered key stops the host with the command to register it
