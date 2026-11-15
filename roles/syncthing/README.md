@@ -8,7 +8,8 @@ Syncthing's REST API: this machine's own instance and the hub's.
 
 - Installs the `syncthing` package on a regular Fedora host. On a bootc host
   the package comes with the image, and the role stops if it's missing.
-- Creates the user's identity if absent (`syncthing generate`, as the user).
+- Creates the user's identity in `syncthing_config_dir` if absent
+  (`syncthing generate --home`, as the user).
 - Enables the user service (the `default.target.wants` link, as
   `systemctl --user enable` would) and starts it. That needs the user's
   systemd manager running: the user logged in, or lingering. Otherwise it
@@ -52,6 +53,7 @@ the role only reads, then reports each change a real run would make.
 | Variable | Default | Meaning |
 |---|---|---|
 | `syncthing_user` | `ansible_facts.user_id` | whose Syncthing this is |
+| `syncthing_config_dir` | `~/.local/state/syncthing` | where the user's Syncthing keeps `config.xml` and its keys; `~` is the user's home |
 | `syncthing_folders` | `[]` | list of `{id, label, path, type, ignore}`; `path` may start with `~`; `ignore` lines go to `<path>/.stignore` |
 | `syncthing_hub` | `{}` | `{name, device_id, address, api_url, api_key, api_fingerprint, delegate_to, folder_paths}` |
 | `syncthing_global_discovery` | `false` | this machine's global discovery |
@@ -89,6 +91,10 @@ the role only reads, then reports each change a real run would make.
   otherwise block removing a directory.
 - Global discovery and relays off means the hub must be reachable at
   `address` from wherever the machine is.
+- `syncthing_config_dir` must be where Syncthing itself looks, because the
+  packaged user service runs it without `--home`. That is the default, or
+  `~/.config/syncthing` for an identity made by an older Syncthing (Syncthing
+  still uses it when it finds a `config.xml` there).
 
 ## Tests
 

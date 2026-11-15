@@ -16,5 +16,9 @@
         name: syncthing-instance
         image: localhost/syncthing-molecule
         systemd: always
+        # A user manager (lingering dev) fails here unprivileged: "Failed to allocate
+        # manager object: Permission denied" under rootless podman 5.8 / kernel 7.2, with
+        # fc42 and fc44 images alike. Rootless, so privileged stays inside the user namespace.
+        privileged: true
         state: started
         command: /sbin/init

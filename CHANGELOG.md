@@ -7,9 +7,34 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-15
+
+Deferred minors from the personal-layer reviews (piece 2).
+
+### Added
+
+- `syncthing_config_dir`: where the user's Syncthing keeps `config.xml` and its keys. The default, `~/.local/state/syncthing`, is unchanged.
+  - Set it to `~/.config/syncthing` for an identity made by an older Syncthing, which Syncthing still uses from there.
+  - Before, such a host got a `generate` that created nothing (its `creates:` looked in the default place) and then had its pairing skipped silently, reported as success.
+  - `syncthing generate` and `syncthing device-id` now get `--home` set to this directory.
+- `syncthing`: `meta/argument_specs.yml`, declaring every variable.
+
 ### Changed
 
+- `git_repo_sync`: an `interval` that doesn't divide 60 (e.g. `7min`) is refused, naming the repo and the intervals that work. `OnCalendar=*:0/N` restarts at :00 every hour, so `7min` left a 4-minute last gap.
+- `git_repo_sync`: the login script now sends a desktop notification, not just a journal line, when:
+  - `after_pull` fails, such as a claude-config `apply` that refuses because a local file is in the way;
+  - the fetch fails after origin answered `ls-remote`, so the failure isn't just being offline.
 - `mcp_gate` molecule: the test image moves to Fedora 44. Fedora 42 reached end of life on 2026-05-27 (#34).
+- `git_repo_sync` and `syncthing` molecule: the test containers run `privileged` (still rootless). On podman 5.8 with kernel 7.2, a user manager no longer starts in an unprivileged container ("Failed to allocate manager object: Permission denied"), with Fedora 42 and 44 images alike.
+
+### Fixed
+
+- `git_repo_sync`: a repo dropped from `git_repo_sync_repos` no longer leaves its units behind.
+  - Its timer, both wants links and its `~/.config/git-repo-sync/<name>.env` are removed, and its timer is stopped when the user's systemd is running.
+  - Only this role's names (`git-repo-sync@<name>.*`) are matched; the clone and its deploy key stay.
+- `git_repo_sync` molecule: the negated checks in `verify.yml` (`! test -e ...`) could never fail, because `set -e` ignores a command negated with `!`. They now end in `|| exit 1`.
+- `git_repo_sync`: `tests/test-sync.sh` removes its temporary directories.
 
 ## [1.10.1] - 2026-11-15
 

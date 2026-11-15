@@ -16,6 +16,21 @@
   loop_control:
     label: "{{ item.name | default('?') }}"
 
+# OnCalendar=*:0/N starts again at :00 every hour, so an N that doesn't divide 60 leaves
+# a short last gap (7min runs at :56, then :00).
+- name: Ensure every interval divides the hour evenly
+  ansible.builtin.assert:
+    that:
+      - 60 % (item.interval[:-3] | int) == 0
+    fail_msg: >-
+      git_repo_sync_repos entry {{ item.name }} has interval {{ item.interval }}, which doesn't divide 60:
+      the timer restarts at :00 every hour, so the last gap would be {{ 60 % (item.interval[:-3] | int) }} min.
+      Use 1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30min.
+    quiet: true
+  loop: "{{ git_repo_sync_repos | selectattr('interval', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 # On a bootc image /usr/local is /var/usrlocal and starts without libexec.
 - name: Ensure the script's directory exists
   ansible.builtin.file:
@@ -49,6 +64,7 @@
   ansible.builtin.set_fact:
     git_repo_sync_list: []
     git_repo_sync_to_switch: []
+    git_repo_sync_dropped: []
 
 # systemd does not expand ~ in an EnvironmentFile, so every dest is made absolute once.
 - name: Expand ~ in each repo's dest
@@ -351,6 +367,47 @@
       loop_control:
         label: "{{ item[1] }}git-repo-sync@{{ item[0] }}.timer"
 
+    # A repo dropped from git_repo_sync_repos keeps what an earlier run made for it unless
+    # it is removed here. Only this role's names are matched; the clone and key stay.
+    - name: Find the units of every repo set up here before
+      ansible.builtin.find:
+        paths:
+          - "{{ git_repo_sync_home }}/.config/systemd/user"
+          - "{{ git_repo_sync_home }}/.config/systemd/user/default.target.wants"
+          - "{{ git_repo_sync_home }}/.config/systemd/user/timers.target.wants"
+        patterns: ['^git-repo-sync@.+[.](service|timer)$']
+        use_regex: true
+        file_type: any
+      register: git_repo_sync_found_units
+
+    - name: Find the sync settings of every repo set up here before
+      ansible.builtin.find:
+        paths: ["{{ git_repo_sync_home }}/.config/git-repo-sync"]
+        patterns: ['*.env']
+      register: git_repo_sync_found_envs
+
+    - name: Settle which repos were dropped from the list
+      ansible.builtin.set_fact:
+        git_repo_sync_dropped: >-
+          {{ ((git_repo_sync_found_units.files | map(attribute='path') | map('basename')
+               | map('regex_replace', '^git-repo-sync@', '') | map('regex_replace', '[.](service|timer)$', '') | list)
+              + (git_repo_sync_found_envs.files | map(attribute='path') | map('basename')
+               | map('regex_replace', '[.]env$', '') | list))
+             | unique | difference(git_repo_sync_list | map(attribute='name') | list) }}
+
+    - name: Ensure repos dropped from the list leave no units or settings behind
+      ansible.builtin.file:
+        path: "{{ git_repo_sync_home }}/{{ item[1] | replace('NAME', item[0]) }}"
+        state: absent
+      loop: >-
+        {{ git_repo_sync_dropped
+           | product(['.config/systemd/user/git-repo-sync@NAME.timer',
+                      '.config/systemd/user/timers.target.wants/git-repo-sync@NAME.timer',
+                      '.config/systemd/user/default.target.wants/git-repo-sync@NAME.service',
+                      '.config/git-repo-sync/NAME.env']) | list }}
+      loop_control:
+        label: "{{ item[1] | replace('NAME', item[0]) }}"
+
 # A timer enabled by a link starts at the next login; when the user's systemd is already
 # running (the user is logged in), it is started now.
 - name: Check whether the user's systemd is running
@@ -383,4 +440,13 @@
       loop: "{{ git_repo_sync_list | rejectattr('interval', 'defined') | list }}"
       loop_control:
         label: "{{ item.name }}"
+      failed_when: false  # never loaded is fine
+
+    - name: Ensure timers of repos dropped from the list are stopped
+      ansible.builtin.systemd_service:
+        name: "git-repo-sync@{{ item }}.timer"
+        scope: user
+        state: stopped
+        daemon_reload: true
+      loop: "{{ git_repo_sync_dropped }}"
       failed_when: false  # never loaded is fine

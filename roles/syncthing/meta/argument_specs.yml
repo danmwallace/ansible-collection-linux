@@ -1,0 +1,51 @@
+---
+argument_specs:
+  main:
+    short_description: A user's Syncthing, its folders paired with an always-on hub.
+    description:
+      - Installs Syncthing (or checks a bootc image has it), creates the user's identity,
+        enables the user service and pairs each folder with a hub, both sides through
+        Syncthing's REST API.
+      - The hub only gains devices and folders; nothing is removed or moved.
+    author: Dan Wallace
+    options:
+      syncthing_user:
+        type: str
+        default: ansible_facts.user_id
+        description: The account whose Syncthing this is.
+      syncthing_config_dir:
+        type: str
+        default: ~/.local/state/syncthing
+        description:
+          - Where the user's Syncthing keeps config.xml and its keys; may start with ~ (the user's home).
+          - Syncthing's own default. An identity made by an older Syncthing lives in ~/.config/syncthing,
+            which Syncthing still uses when it finds a config.xml there.
+          - The packaged user service runs Syncthing without --home, so this must be where Syncthing
+            itself looks.
+      syncthing_folders:
+        type: list
+        elements: dict
+        default: []
+        description:
+          - Folders this machine syncs with the hub, each {id, label, path, type, ignore}.
+          - path may start with ~; type is sendreceive, sendonly or receiveonly; ignore lines go to
+            <path>/.stignore.
+      syncthing_hub:
+        type: dict
+        default: {}
+        description:
+          - The always-on peer, {name, device_id, address, api_url, api_key, api_fingerprint,
+            delegate_to, folder_paths}.
+          - api_key comes from ansible-vault; folder_paths maps each folder id to its path on the hub.
+      syncthing_global_discovery:
+        type: bool
+        default: false
+        description: This machine's global discovery.
+      syncthing_relays:
+        type: bool
+        default: false
+        description: This machine's relays.
+      syncthing_device_name:
+        type: str
+        default: inventory_hostname
+        description: How this machine is named on the hub.

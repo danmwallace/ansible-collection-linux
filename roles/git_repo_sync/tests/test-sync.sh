@@ -6,11 +6,14 @@ set -uo pipefail
 script="$(cd "$(dirname "$0")/.." && pwd)/files/git-repo-sync"
 fail=0
 pass=0
+tmps=()
+trap 'rm -rf -- "${tmps[@]}"' EXIT
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 setup() {
     T=$(mktemp -d)
+    tmps+=("$T")
     BIN=$T/bin NOTE=$T/notify.log
     mkdir -p "$BIN"
     printf '#!/usr/bin/bash\necho "$*" >> %s\n' "$NOTE" > "$BIN/notify-send"
@@ -112,6 +115,28 @@ test_after_pull_runs_only_after_pull() {
     [ ! -e "$T/ran" ]
 }
 
+test_after_pull_failure_notifies() {
+    # e.g. claude-config's apply refusing because a local file is in the way
+    setup
+    other_commits new.md fresh
+    sync claude-config "$T/here" pull "exit 1"; rc=$?
+    [ "$rc" -eq 0 ] && [ "$(cat "$T/here/new.md")" = fresh ] &&
+        [ "$(wc -l < "$NOTE")" -eq 1 ] && grep -q "after_pull failed (exit 1)" "$NOTE"
+}
+
+test_fetch_failure_after_reachable_notifies() {
+    # origin answers ls-remote (refs only) but the fetch fails: a commit object on origin is gone
+    setup
+    other_commits new.md fresh
+    head=$(git -C "$T/origin.git" rev-parse main)
+    rm "$T/origin.git/objects/${head:0:2}/${head:2}"
+    printf 'task\n' > "$T/here/task.md"
+    before=$(git -C "$T/here" rev-parse HEAD)
+    sync obsidian "$T/here" sync; rc=$?
+    [ "$rc" -eq 0 ] && [ "$(git -C "$T/here" rev-parse HEAD)" = "$before" ] && [ -f "$T/here/task.md" ] &&
+        [ "$(wc -l < "$NOTE")" -eq 1 ] && grep -q "fetch failed" "$NOTE"
+}
+
 test_sync_without_git_identity() {
     # A fresh laptop has no user.name/user.email: the sync must still commit.
     setup
@@ -194,7 +219,8 @@ test_bad_usage() {
 
 for t in test_pull_fast_forward test_pull_skips_dirty test_sync_commits_pulls_pushes test_sync_nothing_to_do_is_quiet \
          test_sync_conflict_aborts_and_notifies test_offline_is_quiet test_sync_skips_rebase_in_progress \
-         test_after_pull_runs_only_after_pull test_sync_without_git_identity test_failed_commit_restores_and_notifies \
+         test_after_pull_runs_only_after_pull test_after_pull_failure_notifies test_fetch_failure_after_reachable_notifies \
+         test_sync_without_git_identity test_failed_commit_restores_and_notifies \
          test_sync_skips_cherry_pick_in_progress test_sync_skips_unmerged_index \
          test_sync_unchanged_origin_pushes_without_rebase test_sync_rebase_keeps_a_concurrent_edit test_missing_clone_notifies \
          test_bad_usage; do

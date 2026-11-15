@@ -28,6 +28,11 @@ repo current across laptops without a personal GitHub credential on each one.
 - Installs `~/.config/systemd/user/git-repo-sync@.service` and enables one
   instance per repo whose `mode` isn't `none` (by creating the
   `default.target.wants` link, so it works with no user session).
+- Removes what an earlier run made for a repo no longer in
+  `git_repo_sync_repos`: its timer, both wants links and
+  `~/.config/git-repo-sync/<name>.env`, and stops the timer if the user's
+  systemd is running. Only this role's names (`git-repo-sync@<name>.*`) are
+  matched; the clone and its deploy key stay.
 
 If a clone fails, or an existing clone's alias can't reach GitHub yet (the key
 isn't registered, or no network), the play
@@ -43,6 +48,8 @@ read-write when `writable` is true. The role never registers keys itself.
 
 It never forces anything:
 - Offline, or a key GitHub doesn't know: a line in the journal, exit 0.
+- origin answers but the fetch fails, or `after_pull` fails (an `apply`
+  that refuses, say): a desktop notification as well.
 - A rebase, merge, cherry-pick or revert in progress, or unmerged files: it
   does nothing.
 - A commit that fails (a hook, say): it unstages again and notifies.
@@ -79,9 +86,12 @@ It never forces anything:
 
 ### Optional per repo
 
-- `interval: 15min` (1–59 minutes) also runs the sync on a user timer,
-  `OnCalendar=*:0/15` with `Persistent=true`, so a run missed while the machine
-  slept happens right after it wakes. Without it, the sync runs only at login.
+- `interval: 15min` also runs the sync on a user timer, `OnCalendar=*:0/15`
+  with `Persistent=true`, so a run missed while the machine slept happens
+  right after it wakes. Without it, the sync runs only at login. The minutes
+  must divide 60 (1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30); the role refuses
+  others, because the timer restarts at :00 every hour and `7min` would
+  leave a 4-minute last gap.
 - `git_exclude: [patterns]` adds a managed block to the clone's
   `.git/info/exclude` (local, never committed), e.g. Syncthing's temporary files
   when the clone also lives in a Syncthing folder.

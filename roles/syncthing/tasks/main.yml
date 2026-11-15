@@ -36,7 +36,8 @@
   ansible.builtin.set_fact:
     syncthing_home: "{{ ansible_facts.getent_passwd[syncthing_user][4] }}"
     syncthing_uid: "{{ ansible_facts.getent_passwd[syncthing_user][1] }}"
-    syncthing_config: "{{ ansible_facts.getent_passwd[syncthing_user][4] }}/.local/state/syncthing/config.xml"
+    syncthing_config_home: "{{ syncthing_config_dir | regex_replace('^~(?=/|$)', ansible_facts.getent_passwd[syncthing_user][4]) }}"
+    syncthing_config: "{{ syncthing_config_dir | regex_replace('^~(?=/|$)', ansible_facts.getent_passwd[syncthing_user][4]) }}/config.xml"
 
 - name: Detect a bootc host
   ansible.builtin.stat:
@@ -63,7 +64,7 @@
   become: true
   become_user: "{{ syncthing_user }}"
   ansible.builtin.command:
-    cmd: syncthing generate --no-port-probing
+    cmd: syncthing generate --home {{ syncthing_config_home | quote }} --no-port-probing
     creates: "{{ syncthing_config }}"
 
 - name: Ensure the user's Syncthing starts with the session (what systemctl --user enable does)
@@ -192,7 +193,7 @@
       become: true
       become_user: "{{ syncthing_user }}"
       ansible.builtin.command:
-        cmd: syncthing device-id
+        cmd: syncthing device-id --home {{ syncthing_config_home | quote }}
       register: syncthing_my_id
       changed_when: false
       check_mode: false
