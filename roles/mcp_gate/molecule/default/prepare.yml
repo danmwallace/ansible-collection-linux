@@ -1,0 +1,24 @@
+---
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    # The gate calls /usr/bin/virsh -r -c qemu:///system <subcommand> ...; there's no libvirt
+    # in the container, so a stub answers for one VM, web01.
+    - name: Ensure a stub virsh answers for web01
+      ansible.builtin.copy:
+        dest: /usr/bin/virsh
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          case "$4" in
+              list) echo web01 ;;
+              dominfo) printf 'Id:             1\nName:           web01\nState:          running\n' ;;
+              domblklist) printf ' Type Device Target Source\n------\n file disk vda /var/lib/libvirt/images/web01.qcow2\n' ;;
+              *) exit 1 ;;
+          esac
+
+    - name: Ensure the libvirt group exists, as on srv01
+      ansible.builtin.group:
+        name: libvirt
+        system: true

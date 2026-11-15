@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply mcp_gate from a local homelab-mcp checkout
+      ansible.builtin.include_role:
+        name: danmwallace.linux.mcp_gate
+      vars:
+        mcp_gate_version: test
+        mcp_gate_src_dir: "{{ lookup('env', 'MCP_GATE_SRC_DIR') | default(lookup('env', 'HOME') + '/Code/homelab-mcp', true) }}"
+        mcp_gate_ro_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA molecule@test

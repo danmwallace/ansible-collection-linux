@@ -38,6 +38,7 @@ collections:
 | [`danmwallace.linux.cockpit`](roles/cockpit/README.md) | Configure TLS for an already-installed Cockpit using Let's Encrypt certificates. |
 | [`danmwallace.linux.git_repo_sync`](roles/git_repo_sync/README.md) | Per-repo GitHub deploy keys and clones, with a login service that pulls or syncs (commit, rebase, push) each clone and never forces anything. |
 | [`danmwallace.linux.libvirt_usb_reattach`](roles/libvirt_usb_reattach/README.md) | Re-attach USB passthrough devices to running libvirt domains after they re-enumerate. |
+| [`danmwallace.linux.mcp_gate`](roles/mcp_gate/README.md) | A read-only SSH forced-command gate for MCP servers on a libvirt host: one account, keys forced to the gate, libvirt read through the read-only socket. |
 | [`danmwallace.linux.nm_bridge`](roles/nm_bridge/README.md) | Declare NetworkManager bridge connections and their ethernet or VLAN ports, applied in place without recreating the bridge. |
 | [`danmwallace.linux.mikrotik_backup`](roles/mikrotik_backup/README.md) | Nightly SFTP pull of on-device MikroTik RouterOS backup and export files, with Uptime Kuma monitoring. |
 | [`danmwallace.linux.raspberry_pi_network_toolkit`](roles/raspberry_pi_network_toolkit/README.md) | Configure a Raspberry Pi (or Debian/Ubuntu host) as a portable network diagnostics and reconnaissance toolkit. |

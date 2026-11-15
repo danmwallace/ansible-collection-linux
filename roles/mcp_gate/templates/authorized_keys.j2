@@ -1,0 +1,3 @@
+{% for key in mcp_gate_ro_keys %}
+command="/usr/local/libexec/mcp-gate ro",restrict {{ key | trim }}
+{% endfor %}
