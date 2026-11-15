@@ -15,6 +15,10 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
   - Cause: the controller-side `git` clone doesn't run in check mode, so the copy that follows had no file.
   - The clone now runs in check mode too; it only writes the controller's cache.
   - The read-only `id` check now also runs in check mode, and on a new host, where the account doesn't exist yet, it passes.
+- `mcp_gate`: the account no longer gets `/etc/skel` files it owns (`.bashrc`, `.bash_profile`, `.bash_logout`).
+  - sshd runs the forced command through bash, and the user manager reads `~/.config`. So code written to those files would run before or beside the gate.
+  - The account is now created without a skeleton, and the home keeps only `.ssh`, so 1.10.0's files are removed.
+  - Found by the final review of agentic OS piece 3, step 5.
 
 ### Added
 

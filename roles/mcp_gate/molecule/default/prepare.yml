@@ -56,6 +56,13 @@
               *) exit 1 ;;
           esac
 
+    # As 1.10.0 left it on srv01: a home copied from /etc/skel, owned by the account.
+    - name: Ensure mcp-ro exists the way 1.10.0 created it
+      ansible.builtin.user:
+        name: mcp-ro
+        shell: /bin/bash
+        create_home: true
+
     - name: Ensure the libvirt group exists, as on srv01
       ansible.builtin.group:
         name: libvirt

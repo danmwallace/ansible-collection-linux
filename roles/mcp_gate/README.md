@@ -50,15 +50,17 @@ None declared in `meta/main.yml`. Only `ansible.builtin` modules are used.
 2. Clones `mcp_gate_source` at `mcp_gate_version` on the controller, into `<mcp_gate_cache_dir>/<version>`. It runs once, as the controller user, without become, and in check mode too: it changes nothing on the target, and the next step needs the file. It's skipped when `mcp_gate_src_dir` is set.
 3. Installs `gate/mcp-gate` as `/usr/local/libexec/mcp-gate` (root, 0755).
 4. Writes `/etc/mcp-gate.json` from `mcp_gate_journal_units` and `mcp_gate_storage_paths`.
-5. Creates the account with a locked password (`!`), `/bin/bash` as its shell, and `systemd-journal` as its only extra group (`append: false`, so other groups are removed).
-6. Makes the home folder and `~/.ssh` root-owned (0755), and writes `authorized_keys` (root, 0644) with one forced-command line per key.
+5. Creates the account with a locked password (`!`), `/bin/bash` as its shell, and `systemd-journal` as its only extra group (`append: false`, so other groups are removed). There's no `/etc/skel` copy.
+6. Makes the home folder root-owned (0755) and removes everything in it except `.ssh`, such as the `/etc/skel` files 1.10.0 copied in. Then makes `~/.ssh` root-owned (0755) and writes `authorized_keys` (root, 0644) with one forced-command line per key.
 7. Fails if the account is in `libvirt`. In check mode on a new host, the account doesn't exist yet, so this check is skipped.
 
 ## Notes
 
 - **The shell must be a real shell.** sshd runs a forced command through the account's login shell, so `/sbin/nologin` would refuse every request. The `command=…,restrict` options are what keep the key from being a login: no pty, no forwarding, nothing but the gate.
 - **`systemd-journal` lets the account read every journal.** The gate only ever runs `journalctl -u <unit>` for units in `mcp_gate_journal_units`, and the key can run nothing but the gate.
-- **The account can't edit its own keys.** Its home, `.ssh` and `authorized_keys` are root-owned, which sshd's `StrictModes` accepts. If the account owned its home, it could rename `.ssh` and swap in a key file without `command=…,restrict`.
+- **The account owns nothing it could use to get around the gate.** Its home, `.ssh` and `authorized_keys` are root-owned, which sshd's `StrictModes` accepts, and the home holds nothing else.
+  - If the account owned its home, it could rename `.ssh` and swap in a key file without `command=…,restrict`.
+  - If it owned a `.bashrc` or `~/.config`, code planted there would run through its login shell or user manager before or beside the gate.
 - **`libvirt` grants full management.** Membership gives full libvirt control through libvirt's default polkit rule, so the role stops rather than run with it. Reads don't need it: the read-only socket is open to every user.
 - **The gate only reads.** It never touches NetworkManager, bridges, firewalld or VM definitions. It logs each request to journald under the identifier `mcp-gate`, with the client address (`journalctl -t mcp-gate`).
 - **Replies are JSON.** The gate answers with one JSON object, exiting 0 (ok), 1 (a command failed), 2 (refused) or 124 (timed out). The protocol lives in homelab-mcp's `gate/mcp-gate`.

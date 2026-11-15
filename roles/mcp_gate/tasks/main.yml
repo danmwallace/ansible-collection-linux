@@ -54,7 +54,9 @@
     password: "!"
     groups: [systemd-journal]
     append: false
-    create_home: true
+    # No /etc/skel: files the account owns in its home (.bashrc, ~/.config) are read by its
+    # login shell and user manager before or beside the gate. The home is created below.
+    create_home: false
 
 # The home and .ssh are root-owned: an account that owned either could swap in a key file
 # of its own without command=...,restrict. The gate never writes there.
@@ -65,6 +67,24 @@
     owner: root
     group: root
     mode: "0755"
+
+# The home holds only .ssh. Anything else (1.10.0 copied /etc/skel in) is removed.
+- name: Find what else is in the account's home
+  ansible.builtin.find:
+    paths: "/home/{{ mcp_gate_ro_user }}"
+    file_type: any
+    hidden: true
+    recurse: false
+    excludes: [".ssh"]
+  register: mcp_gate_home_extra
+
+- name: Ensure nothing but .ssh is in the account's home
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ mcp_gate_home_extra.files }}"
+  loop_control:
+    label: "{{ item.path }}"
 
 - name: Ensure the account's .ssh folder is root-owned
   ansible.builtin.file:
