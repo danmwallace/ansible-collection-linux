@@ -21,6 +21,10 @@ argument_specs:
         type: str
         default: ""
         description: A controller path to a homelab-mcp checkout; when set, nothing is cloned.
+      mcp_gate_cache_dir:
+        type: str
+        default: ~/.cache/mcp-gate (of the controller user)
+        description: Where the controller keeps homelab-mcp clones, one folder per version.
       mcp_gate_ro_user:
         type: str
         default: mcp-ro

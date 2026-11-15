@@ -11,7 +11,7 @@
   ansible.builtin.set_fact:
     mcp_gate_checkout: >-
       {{ mcp_gate_src_dir if mcp_gate_src_dir | length > 0
-         else lookup('env', 'HOME') ~ '/.cache/mcp-gate/' ~ mcp_gate_version }}
+         else mcp_gate_cache_dir ~ '/' ~ mcp_gate_version }}
 
 - name: Ensure homelab-mcp is checked out on the controller at {{ mcp_gate_version }}
   ansible.builtin.git:
@@ -23,6 +23,9 @@
   delegate_to: localhost
   become: false
   run_once: true
+  # A clone into the controller's cache changes nothing on the target, and the copy below
+  # needs the file, so it runs in check mode too.
+  check_mode: false
   when: mcp_gate_src_dir | length == 0
 
 - name: Ensure the gate is installed
@@ -51,7 +54,9 @@
     password: "!"
     groups: [systemd-journal]
     append: false
-    create_home: true
+    # No /etc/skel: files the account owns in its home (.bashrc, ~/.config) are read by its
+    # login shell and user manager before or beside the gate. The home is created below.
+    create_home: false
 
 # The home and .ssh are root-owned: an account that owned either could swap in a key file
 # of its own without command=...,restrict. The gate never writes there.
@@ -62,6 +67,24 @@
     owner: root
     group: root
     mode: "0755"
+
+# The home holds only .ssh. Anything else (1.10.0 copied /etc/skel in) is removed.
+- name: Find what else is in the account's home
+  ansible.builtin.find:
+    paths: "/home/{{ mcp_gate_ro_user }}"
+    file_type: any
+    hidden: true
+    recurse: false
+    excludes: [".ssh"]
+  register: mcp_gate_home_extra
+
+- name: Ensure nothing but .ssh is in the account's home
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ mcp_gate_home_extra.files }}"
+  loop_control:
+    label: "{{ item.path }}"
 
 - name: Ensure the account's .ssh folder is root-owned
   ansible.builtin.file:
@@ -84,6 +107,9 @@
     argv: [id, -nG, "{{ mcp_gate_ro_user }}"]
   register: mcp_gate_groups
   changed_when: false
+  check_mode: false
+  # In check mode on a new host the account doesn't exist yet (the user task only reported it).
+  failed_when: mcp_gate_groups.rc != 0 and not ansible_check_mode
 
 - name: Stop if the account is in libvirt (full management through polkit)
   ansible.builtin.assert:

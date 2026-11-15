@@ -1,4 +1,42 @@
 ---
+# The role clones homelab-mcp on the controller. Here that's a local repo with a `test` tag,
+# built from MCP_GATE_SRC_DIR (default ~/Code/homelab-mcp), so the clone path, including
+# check mode on a fresh controller cache, is what converge exercises.
+- name: Prepare the controller
+  hosts: localhost
+  gather_facts: false
+  vars:
+    molecule_gate_src: "{{ lookup('env', 'MCP_GATE_SRC_DIR') | default(lookup('env', 'HOME') + '/Code/homelab-mcp', true) }}"
+    molecule_tmp: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+  tasks:
+    - name: Ensure no earlier repo or cache is left
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: ["{{ molecule_tmp }}/homelab-mcp", "{{ molecule_tmp }}/cache"]
+
+    - name: Ensure the repo folder exists
+      ansible.builtin.file:
+        path: "{{ molecule_tmp }}/homelab-mcp/gate"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure the gate is in the repo
+      ansible.builtin.copy:
+        src: "{{ molecule_gate_src }}/gate/mcp-gate"
+        dest: "{{ molecule_tmp }}/homelab-mcp/gate/mcp-gate"
+        mode: "0755"
+
+    # ansible.builtin.git only clones; init, commit and tag need the CLI.
+    - name: Ensure the repo has a commit tagged test  # noqa: command-instead-of-module
+      ansible.builtin.shell:
+        cmd: >-
+          git init -q -b main && git add gate/mcp-gate &&
+          git -c user.name=molecule -c user.email=molecule@localhost commit -q -m test &&
+          git tag test
+        chdir: "{{ molecule_tmp }}/homelab-mcp"
+      changed_when: true
+
 - name: Prepare
   hosts: molecule
   gather_facts: false
@@ -17,6 +55,13 @@
               domblklist) printf ' Type Device Target Source\n------\n file disk vda /var/lib/libvirt/images/web01.qcow2\n' ;;
               *) exit 1 ;;
           esac
+
+    # As 1.10.0 left it on srv01: a home copied from /etc/skel, owned by the account.
+    - name: Ensure mcp-ro exists the way 1.10.0 created it
+      ansible.builtin.user:
+        name: mcp-ro
+        shell: /bin/bash
+        create_home: true
 
     - name: Ensure the libvirt group exists, as on srv01
       ansible.builtin.group:

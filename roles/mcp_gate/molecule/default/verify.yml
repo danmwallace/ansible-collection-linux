@@ -75,6 +75,18 @@
           - mcp_gate_verify_account.stdout_lines[2] == '/bin/bash'
         quiet: true
 
+    - name: Find anything in the home the account owns
+      ansible.builtin.command:
+        argv: [find, /home/mcp-ro, -user, mcp-ro]
+      register: mcp_gate_verify_owned
+      changed_when: false
+
+    - name: Check the account owns nothing in its home (no .bashrc, no ~/.config)
+      ansible.builtin.assert:
+        that: mcp_gate_verify_owned.stdout_lines | length == 0
+        fail_msg: "owned by mcp-ro: {{ mcp_gate_verify_owned.stdout_lines }}"
+        quiet: true
+
     - name: Read the ownership and modes of the gate, the config and the key files
       ansible.builtin.stat:
         path: "{{ item }}"
