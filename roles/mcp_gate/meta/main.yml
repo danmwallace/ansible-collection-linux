@@ -1,0 +1,20 @@
+---
+# SPDX-License-Identifier: MIT
+galaxy_info:
+  role_name: mcp_gate
+  namespace: danmwallace
+  author: Dan Wallace
+  description: A read-only SSH forced-command gate for MCP servers on a libvirt host.
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Fedora
+      versions:
+        - all
+  galaxy_tags:
+    - mcp
+    - ssh
+    - libvirt
+    - homelab
+
+dependencies: []

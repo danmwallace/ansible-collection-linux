@@ -1,0 +1,42 @@
+---
+argument_specs:
+  main:
+    short_description: A read-only SSH forced-command gate for MCP servers.
+    description:
+      - Installs gate/mcp-gate from a pinned homelab-mcp tag as /usr/local/libexec/mcp-gate, and
+        an account whose only SSH key is forced to run it in read-only mode.
+      - The account is in systemd-journal (to read journals) and never in libvirt; libvirt reads
+        go through the read-only socket.
+    author: Dan Wallace
+    options:
+      mcp_gate_version:
+        type: str
+        required: true
+        description: The homelab-mcp git ref (tag or commit) whose gate/mcp-gate is installed.
+      mcp_gate_source:
+        type: str
+        default: ssh://git@github.com/danmwallace/homelab-mcp
+        description: The homelab-mcp git URL, cloned on the controller.
+      mcp_gate_src_dir:
+        type: str
+        default: ""
+        description: A controller path to a homelab-mcp checkout; when set, nothing is cloned.
+      mcp_gate_ro_user:
+        type: str
+        default: mcp-ro
+        description: The read-only account.
+      mcp_gate_ro_keys:
+        type: list
+        elements: str
+        required: true
+        description: ed25519 public keys allowed to call the gate; each gets command=...,restrict.
+      mcp_gate_journal_units:
+        type: list
+        elements: str
+        default: [virtqemud, virtnetworkd, virtstoraged, virtlogd, ha-dongle-reattach, cockpit, sshd, NetworkManager, chronyd]
+        description: Units the gate's journal verb may read.
+      mcp_gate_storage_paths:
+        type: list
+        elements: str
+        default: [/var/lib/libvirt/images]
+        description: Paths the gate's host verb reports df for.

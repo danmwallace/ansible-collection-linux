@@ -1,0 +1,83 @@
+---
+- name: Check the gate keys
+  ansible.builtin.assert:
+    that:
+      - mcp_gate_ro_keys | length > 0
+      - mcp_gate_ro_keys | reject('match', '^ssh-ed25519 [A-Za-z0-9+/=]+( \S+)?\s*$') | list | length == 0
+    fail_msg: mcp_gate_ro_keys needs at least one key, each a single "ssh-ed25519 <key> [comment]" line.
+    quiet: true
+
+- name: Settle where gate/mcp-gate comes from
+  ansible.builtin.set_fact:
+    mcp_gate_checkout: >-
+      {{ mcp_gate_src_dir if mcp_gate_src_dir | length > 0
+         else lookup('env', 'HOME') ~ '/.cache/mcp-gate/' ~ mcp_gate_version }}
+
+- name: Ensure homelab-mcp is checked out on the controller at {{ mcp_gate_version }}
+  ansible.builtin.git:
+    repo: "{{ mcp_gate_source }}"
+    dest: "{{ mcp_gate_checkout }}"
+    version: "{{ mcp_gate_version }}"
+    depth: 1
+    single_branch: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: mcp_gate_src_dir | length == 0
+
+- name: Ensure the gate is installed
+  ansible.builtin.copy:
+    src: "{{ mcp_gate_checkout }}/gate/mcp-gate"
+    dest: /usr/local/libexec/mcp-gate
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure the gate config is in place
+  ansible.builtin.template:
+    src: mcp-gate.json.j2
+    dest: /etc/mcp-gate.json
+    owner: root
+    group: root
+    mode: "0644"
+
+# sshd runs a forced command through the account's login shell, so it must be a real shell;
+# the key's command=...,restrict is what keeps it from being a login.
+- name: Ensure the read-only account exists, in systemd-journal only
+  ansible.builtin.user:
+    name: "{{ mcp_gate_ro_user }}"
+    comment: MCP read-only gate
+    shell: /bin/bash
+    password: "!"
+    groups: [systemd-journal]
+    append: false
+    create_home: true
+
+- name: Ensure the account's .ssh folder is root-owned
+  ansible.builtin.file:
+    path: "/home/{{ mcp_gate_ro_user }}/.ssh"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Root-owned, so the account can't rewrite its own key options.
+- name: Ensure only the gate keys are authorized, forced to the gate
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: "/home/{{ mcp_gate_ro_user }}/.ssh/authorized_keys"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Read the account's groups
+  ansible.builtin.command:
+    argv: [id, -nG, "{{ mcp_gate_ro_user }}"]
+  register: mcp_gate_groups
+  changed_when: false
+
+- name: Stop if the account is in libvirt (full management through polkit)
+  ansible.builtin.assert:
+    that: "'libvirt' not in mcp_gate_groups.stdout.split()"
+    fail_msg: "{{ mcp_gate_ro_user }} is in libvirt, which grants full libvirt management; remove it."
+    quiet: true

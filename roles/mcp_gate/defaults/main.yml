@@ -1,0 +1,20 @@
+---
+# The homelab-mcp repo holding gate/mcp-gate, cloned on the controller at mcp_gate_version.
+mcp_gate_source: ssh://git@github.com/danmwallace/homelab-mcp
+# A controller path to a homelab-mcp checkout; when set, no clone (molecule uses this).
+mcp_gate_src_dir: ""
+mcp_gate_ro_user: mcp-ro
+# Units whose journal the gate's `journal` verb may read (srv01 runs the modular libvirt daemons).
+mcp_gate_journal_units:
+  - virtqemud
+  - virtnetworkd
+  - virtstoraged
+  - virtlogd
+  - ha-dongle-reattach
+  - cockpit
+  - sshd
+  - NetworkManager
+  - chronyd
+# Paths the gate's `host` verb reports df for.
+mcp_gate_storage_paths:
+  - /var/lib/libvirt/images

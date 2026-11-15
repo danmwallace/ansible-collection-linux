@@ -1,0 +1,111 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  vars:
+    gate_ok: ["vms", "vm-info web01"]
+    gate_refused: ["reboot", "vms; id", "vm-info nope", "vm-info --all", "journal evil", "vm-start web01"]
+    verify_modes:
+      /usr/local/libexec/mcp-gate: "0755"
+      /etc/mcp-gate.json: "0644"
+      /home/mcp-ro/.ssh: "0755"
+      /home/mcp-ro/.ssh/authorized_keys: "0644"
+  tasks:
+    - name: Run the allowed verbs as mcp-ro
+      ansible.builtin.command:
+        argv: [runuser, -u, mcp-ro, --, env, "SSH_ORIGINAL_COMMAND={{ item }}", /usr/local/libexec/mcp-gate, ro]
+      loop: "{{ gate_ok }}"
+      register: mcp_gate_verify_ok
+      changed_when: false
+
+    - name: Check the allowed verbs answered ok
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - (item.stdout | from_json).ok
+        fail_msg: "{{ item.item }}: rc={{ item.rc }} {{ item.stdout }}"
+        quiet: true
+      loop: "{{ mcp_gate_verify_ok.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Run the refused requests as mcp-ro
+      ansible.builtin.command:
+        argv: [runuser, -u, mcp-ro, --, env, "SSH_ORIGINAL_COMMAND={{ item }}", /usr/local/libexec/mcp-gate, ro]
+      loop: "{{ gate_refused }}"
+      register: mcp_gate_verify_refused
+      changed_when: false
+      failed_when: false
+
+    - name: Check each was refused with exit 2
+      ansible.builtin.assert:
+        that:
+          - item.rc == 2
+          - not (item.stdout | from_json).ok
+          - (item.stdout | from_json).error is search('^refused:')
+        fail_msg: "{{ item.item }}: rc={{ item.rc }} {{ item.stdout }}"
+        quiet: true
+      loop: "{{ mcp_gate_verify_refused.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Run the gate with no command, and in an unknown mode
+      ansible.builtin.command:
+        argv: "{{ item }}"
+      loop:
+        - [runuser, -u, mcp-ro, --, /usr/local/libexec/mcp-gate, ro]
+        - [runuser, -u, mcp-ro, --, env, SSH_ORIGINAL_COMMAND=vms, /usr/local/libexec/mcp-gate, ops]
+      register: mcp_gate_verify_other
+      changed_when: false
+      failed_when: mcp_gate_verify_other.rc != 2
+
+    - name: Read the account, its groups and its password field
+      ansible.builtin.command:
+        argv: [sh, -c, "id -nG mcp-ro; getent shadow mcp-ro | cut -d: -f2; getent passwd mcp-ro | cut -d: -f7"]
+      register: mcp_gate_verify_account
+      changed_when: false
+
+    - name: Check mcp-ro is in systemd-journal, not libvirt, with a locked password and bash
+      ansible.builtin.assert:
+        that:
+          - "'systemd-journal' in mcp_gate_verify_account.stdout_lines[0].split()"
+          - "'libvirt' not in mcp_gate_verify_account.stdout_lines[0].split()"
+          - mcp_gate_verify_account.stdout_lines[1] is match('^!')
+          - mcp_gate_verify_account.stdout_lines[2] == '/bin/bash'
+        quiet: true
+
+    - name: Read the ownership and modes of the gate, the config and the key files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/local/libexec/mcp-gate
+        - /etc/mcp-gate.json
+        - /home/mcp-ro/.ssh
+        - /home/mcp-ro/.ssh/authorized_keys
+      register: mcp_gate_verify_stat
+
+    - name: Check they are root-owned with the expected modes
+      ansible.builtin.assert:
+        that:
+          - item.stat.pw_name == 'root'
+          - item.stat.mode == verify_modes[item.item]
+        fail_msg: "{{ item.item }}: {{ item.stat.pw_name }} {{ item.stat.mode }}"
+        quiet: true
+      loop: "{{ mcp_gate_verify_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read authorized_keys and the gate config
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop: [/home/mcp-ro/.ssh/authorized_keys, /etc/mcp-gate.json]
+      register: mcp_gate_verify_files
+
+    - name: Check the one key is forced to the gate and the config holds the defaults
+      ansible.builtin.assert:
+        that:
+          - (mcp_gate_verify_files.results[0].content | b64decode).splitlines() | length == 1
+          - (mcp_gate_verify_files.results[0].content | b64decode) is match('^command="/usr/local/libexec/mcp-gate ro",restrict ssh-ed25519 ')
+          - (mcp_gate_verify_files.results[1].content | b64decode | from_json).storage_paths == ['/var/lib/libvirt/images']
+          - "'virtqemud' in (mcp_gate_verify_files.results[1].content | b64decode | from_json).journal_units"
+        quiet: true

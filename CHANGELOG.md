@@ -7,6 +7,16 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-15
+
+### Added
+
+- `mcp_gate`: a new role for a read-only SSH forced-command gate on a libvirt host.
+  - It installs `gate/mcp-gate` from a pinned `homelab-mcp` ref, as `/usr/local/libexec/mcp-gate`, together with `/etc/mcp-gate.json`.
+  - It creates an account (`mcp-ro`) whose only keys carry `command="/usr/local/libexec/mcp-gate ro",restrict`. The account is in `systemd-journal`, and the role refuses to run if it's in `libvirt`.
+  - The gate accepts five read verbs (`vms`, `vm-info`, `failed-units`, `journal`, `host`) and reads libvirt through the read-only socket.
+  - A molecule scenario proves the refusals.
+
 ## [1.9.0] - 2026-11-14
 
 ### Fixed
