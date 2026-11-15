@@ -7,6 +7,20 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-11-15
+
+### Fixed
+
+- `mcp_gate`: a first `--check` run on a controller failed with "Could not find or access … gate/mcp-gate".
+  - Cause: the controller-side `git` clone doesn't run in check mode, so the copy that follows had no file.
+  - The clone now runs in check mode too; it only writes the controller's cache.
+  - The read-only `id` check now also runs in check mode, and on a new host, where the account doesn't exist yet, it passes.
+
+### Added
+
+- `mcp_gate_cache_dir`: where the controller keeps the clones. The default, `~/.cache/mcp-gate`, is unchanged.
+- The molecule scenario now clones a local tagged repo, as a real run does, and checks a `check` run on a fresh container.
+
 ## [1.10.0] - 2026-11-15
 
 ### Added

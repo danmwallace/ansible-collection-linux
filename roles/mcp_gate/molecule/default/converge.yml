@@ -3,11 +3,12 @@
   hosts: molecule
   gather_facts: true
   tasks:
-    - name: Apply mcp_gate from a local homelab-mcp checkout
+    - name: Apply mcp_gate, cloning a local homelab-mcp repo
       ansible.builtin.include_role:
         name: danmwallace.linux.mcp_gate
       vars:
         mcp_gate_version: test
-        mcp_gate_src_dir: "{{ lookup('env', 'MCP_GATE_SRC_DIR') | default(lookup('env', 'HOME') + '/Code/homelab-mcp', true) }}"
+        mcp_gate_source: "file://{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/homelab-mcp"
+        mcp_gate_cache_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/cache"
         mcp_gate_ro_keys:
           - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA molecule@test
