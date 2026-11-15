@@ -64,7 +64,7 @@ None declared in `meta/main.yml`. Only `ansible.builtin` modules are used.
 - **`libvirt` grants full management.** Membership gives full libvirt control through libvirt's default polkit rule, so the role stops rather than run with it. Reads don't need it: the read-only socket is open to every user.
 - **The gate only reads.** It never touches NetworkManager, bridges, firewalld or VM definitions. It logs each request to journald under the identifier `mcp-gate`, with the client address (`journalctl -t mcp-gate`).
 - **Replies are JSON.** The gate answers with one JSON object, exiting 0 (ok), 1 (a command failed), 2 (refused) or 124 (timed out). The protocol lives in homelab-mcp's `gate/mcp-gate`.
-- **Molecule:** the scenario builds a Fedora 42 container and stubs `virsh`. On the controller it builds a local git repo with a `test` tag from `MCP_GATE_SRC_DIR` (default `~/Code/homelab-mcp`), so the role's real clone path runs, first in a `check` stage on a fresh cache and then in converge. It checks the allowed verbs, the refusals (unknown verb, shell characters, unknown or flag-like VM names, unlisted units, no command, unknown mode), the account's groups and password, and file ownership.
+- **Molecule:** the scenario builds a Fedora 44 container and stubs `virsh`. On the controller it builds a local git repo with a `test` tag from `MCP_GATE_SRC_DIR` (default `~/Code/homelab-mcp`), so the role's real clone path runs, first in a `check` stage on a fresh cache and then in converge. It checks the allowed verbs, the refusals (unknown verb, shell characters, unknown or flag-like VM names, unlisted units, no command, unknown mode), the account's groups and password, and file ownership.
 
 ## License
 
