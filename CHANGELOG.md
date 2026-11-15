@@ -7,6 +7,10 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Changed
+
+- `mcp_gate` molecule: the test image moves to Fedora 44. Fedora 42 reached end of life on 2026-05-27 (#34).
+
 ## [1.10.1] - 2026-11-15
 
 ### Fixed
