@@ -2,6 +2,11 @@
 # The account whose Syncthing this is.
 syncthing_user: "{{ ansible_facts['user_id'] }}"
 
+# Where the user's Syncthing keeps config.xml and its keys (~ is the user's home).
+# Syncthing's own default; an identity made by an older Syncthing is in ~/.config/syncthing.
+# The packaged user service runs without --home, so this must be where Syncthing looks.
+syncthing_config_dir: ~/.local/state/syncthing
+
 # Folders this machine syncs with the hub:
 #   id, label, path (may start with ~), type (sendreceive, sendonly, receiveonly),
 #   ignore: lines written to <path>/.stignore (ignore patterns are per device)
