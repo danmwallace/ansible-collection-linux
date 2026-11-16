@@ -7,6 +7,16 @@
     fail_msg: mcp_gate_ro_keys needs at least one key, each a single "ssh-ed25519 <key> [comment]" line.
     quiet: true
 
+- name: Check the ops keys
+  ansible.builtin.assert:
+    that:
+      - mcp_gate_ops_keys | reject('match', '^ssh-ed25519 [A-Za-z0-9+/=]+( \S+)?\s*$') | list | length == 0
+      - mcp_gate_ops_keys | length == 0 or mcp_gate_ops_vms | length > 0
+    fail_msg: >-
+      mcp_gate_ops_keys must be single "ssh-ed25519 <key> [comment]" lines, and need a
+      non-empty mcp_gate_ops_vms (without one the gate refuses every ops request).
+    quiet: true
+
 - name: Settle where gate/mcp-gate comes from
   ansible.builtin.set_fact:
     mcp_gate_checkout: >-
@@ -44,63 +54,28 @@
     group: root
     mode: "0644"
 
-# sshd runs a forced command through the account's login shell, so it must be a real shell;
-# the key's command=...,restrict is what keeps it from being a login.
-- name: Ensure the read-only account exists, in systemd-journal only
-  ansible.builtin.user:
-    name: "{{ mcp_gate_ro_user }}"
-    comment: MCP read-only gate
-    shell: /bin/bash
-    password: "!"
-    groups: [systemd-journal]
-    append: false
-    # No /etc/skel: files the account owns in its home (.bashrc, ~/.config) are read by its
-    # login shell and user manager before or beside the gate. The home is created below.
-    create_home: false
+- name: Ensure the read-only account and its keys
+  ansible.builtin.include_tasks: account.yml
+  vars:
+    mcp_gate_account:
+      user: "{{ mcp_gate_ro_user }}"
+      comment: MCP read-only gate
+      groups: [systemd-journal]
+      mode: ro
+      authorized: "{{ mcp_gate_ro_keys }}"
 
-# The home and .ssh are root-owned: an account that owned either could swap in a key file
-# of its own without command=...,restrict. The gate never writes there.
-- name: Ensure the account's home is root-owned
-  ansible.builtin.file:
-    path: "/home/{{ mcp_gate_ro_user }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-# The home holds only .ssh. Anything else (1.10.0 copied /etc/skel in) is removed.
-- name: Find what else is in the account's home
-  ansible.builtin.find:
-    paths: "/home/{{ mcp_gate_ro_user }}"
-    file_type: any
-    hidden: true
-    recurse: false
-    excludes: [".ssh"]
-  register: mcp_gate_home_extra
-
-- name: Ensure nothing but .ssh is in the account's home
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ mcp_gate_home_extra.files }}"
-  loop_control:
-    label: "{{ item.path }}"
-
-- name: Ensure the account's .ssh folder is root-owned
-  ansible.builtin.file:
-    path: "/home/{{ mcp_gate_ro_user }}/.ssh"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Ensure only the gate keys are authorized, forced to the gate
-  ansible.builtin.template:
-    src: authorized_keys.j2
-    dest: "/home/{{ mcp_gate_ro_user }}/.ssh/authorized_keys"
-    owner: root
-    group: root
-    mode: "0644"
+# mcp-ops is in libvirt (start and shutdown need management access through polkit), so its
+# forced command, `mcp-gate ops`, and the gate's ops_vms list are what limit it.
+- name: Ensure the ops account and its keys
+  ansible.builtin.include_tasks: account.yml
+  vars:
+    mcp_gate_account:
+      user: "{{ mcp_gate_ops_user }}"
+      comment: MCP ops gate (VM start and shutdown)
+      groups: [libvirt, systemd-journal]
+      mode: ops
+      authorized: "{{ mcp_gate_ops_keys }}"
+  when: mcp_gate_ops_keys | length > 0
 
 - name: Read the account's groups
   ansible.builtin.command:

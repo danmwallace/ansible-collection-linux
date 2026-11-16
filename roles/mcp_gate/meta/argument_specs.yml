@@ -34,6 +34,20 @@ argument_specs:
         elements: str
         required: true
         description: ed25519 public keys allowed to call the gate; each gets command=...,restrict.
+      mcp_gate_ops_user:
+        type: str
+        default: mcp-ops
+        description: The ops account, in libvirt; created only when mcp_gate_ops_keys holds a key.
+      mcp_gate_ops_keys:
+        type: list
+        elements: str
+        default: []
+        description: ed25519 public keys allowed to call the gate in ops mode (vm-start, vm-shutdown); each gets command="... ops",restrict.
+      mcp_gate_ops_vms:
+        type: list
+        elements: str
+        default: []
+        description: VMs the ops mode may start and shut down. Empty refuses every ops request; required when mcp_gate_ops_keys is set.
       mcp_gate_journal_units:
         type: list
         elements: str

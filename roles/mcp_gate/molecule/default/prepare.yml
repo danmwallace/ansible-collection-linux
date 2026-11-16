@@ -41,20 +41,34 @@
   hosts: molecule
   gather_facts: false
   tasks:
-    # The gate calls /usr/bin/virsh -r -c qemu:///system <subcommand> ...; there's no libvirt
-    # in the container, so a stub answers for one VM, web01.
-    - name: Ensure a stub virsh answers for web01
+    # The gate calls /usr/bin/virsh -r -c qemu:///system <subcommand> ... (reads) and, in ops
+    # mode, /usr/bin/virsh -c qemu:///system start|shutdown <vm>; there's no libvirt in the
+    # container, so a stub answers for web01 and hypr-test (shut off until started) and logs
+    # every read-write call to /tmp/virsh-rw.log.
+    - name: Ensure a stub virsh answers for web01 and hypr-test
       ansible.builtin.copy:
         dest: /usr/bin/virsh
         mode: "0755"
         content: |
           #!/bin/bash
+          if [ "$1" != "-r" ]; then
+              echo "$3 $4" >> /tmp/virsh-rw.log
+              [ "$3" = start ] && echo running > "/tmp/virsh-state-$4"
+              exit 0
+          fi
           case "$4" in
               list) echo web01 ;;
               dominfo) printf 'Id:             1\nName:           web01\nState:          running\n' ;;
               domblklist) printf ' Type Device Target Source\n------\n file disk vda /var/lib/libvirt/images/web01.qcow2\n' ;;
+              domstate) cat "/tmp/virsh-state-$5" 2>/dev/null || echo "shut off" ;;
               *) exit 1 ;;
           esac
+
+    - name: Ensure the stub's log and state are writable by the accounts
+      ansible.builtin.file:
+        path: /tmp
+        mode: "1777"
+        state: directory
 
     # As 1.10.0 left it on srv01: a home copied from /etc/skel, owned by the account.
     - name: Ensure mcp-ro exists the way 1.10.0 created it

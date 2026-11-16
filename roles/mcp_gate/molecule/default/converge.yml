@@ -12,3 +12,6 @@
         mcp_gate_cache_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/cache"
         mcp_gate_ro_keys:
           - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA molecule@test
+        mcp_gate_ops_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeOpsKeyOnlyNotARealKeyAAAAAAAAAAAAA ops@test
+        mcp_gate_ops_vms: [hypr-test]
