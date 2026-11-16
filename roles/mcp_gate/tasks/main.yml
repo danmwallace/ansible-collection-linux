@@ -12,9 +12,11 @@
     that:
       - mcp_gate_ops_keys | reject('match', '^ssh-ed25519 [A-Za-z0-9+/=]+( \S+)?\s*$') | list | length == 0
       - mcp_gate_ops_keys | length == 0 or mcp_gate_ops_vms | length > 0
+      - mcp_gate_ops_user | length > 0 and mcp_gate_ops_user != mcp_gate_ro_user
     fail_msg: >-
-      mcp_gate_ops_keys must be single "ssh-ed25519 <key> [comment]" lines, and need a
-      non-empty mcp_gate_ops_vms (without one the gate refuses every ops request).
+      mcp_gate_ops_keys must be single "ssh-ed25519 <key> [comment]" lines and need a
+      non-empty mcp_gate_ops_vms (without one the gate refuses every ops request);
+      mcp_gate_ops_user must be set and differ from mcp_gate_ro_user.
     quiet: true
 
 - name: Settle where gate/mcp-gate comes from
@@ -76,6 +78,21 @@
       mode: ops
       authorized: "{{ mcp_gate_ops_keys }}"
   when: mcp_gate_ops_keys | length > 0
+
+# Revoking is emptying mcp_gate_ops_keys: the account (in libvirt) and its key file go too,
+# so no key it had keeps working. The home (root's, holding only .ssh) goes first: userdel -r
+# refuses a home the account doesn't own.
+- name: Ensure no ops account home is left when there are no ops keys
+  ansible.builtin.file:
+    path: "/home/{{ mcp_gate_ops_user }}"
+    state: absent
+  when: mcp_gate_ops_keys | length == 0
+
+- name: Ensure no ops account is left when there are no ops keys
+  ansible.builtin.user:
+    name: "{{ mcp_gate_ops_user }}"
+    state: absent
+  when: mcp_gate_ops_keys | length == 0
 
 - name: Read the account's groups
   ansible.builtin.command:

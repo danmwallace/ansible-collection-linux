@@ -191,3 +191,31 @@
           - (mcp_gate_verify_ops_files.results[1].content | b64decode | from_json).ops_vms == ['hypr-test']
         fail_msg: "{{ mcp_gate_verify_ops_account.stdout_lines }}"
         quiet: true
+
+# Revoking: with no ops keys any more, the ops account (in libvirt) and its keys must go,
+# not linger with a key that still works.
+- name: Verify emptying mcp_gate_ops_keys removes the ops account
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply mcp_gate again without ops keys
+      ansible.builtin.include_role:
+        name: danmwallace.linux.mcp_gate
+      vars:
+        mcp_gate_version: test
+        mcp_gate_source: "file://{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/homelab-mcp"
+        mcp_gate_cache_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/cache"
+        mcp_gate_ro_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA molecule@test
+
+    - name: Look up mcp-ops and its home
+      ansible.builtin.command:
+        argv: [sh, -c, "getent passwd mcp-ops; test -e /home/mcp-ops && echo home-left; true"]
+      register: mcp_gate_verify_ops_gone
+      changed_when: false
+
+    - name: Check mcp-ops and its home are gone, and mcp-ro still works
+      ansible.builtin.assert:
+        that: mcp_gate_verify_ops_gone.stdout | trim == ''
+        fail_msg: "{{ mcp_gate_verify_ops_gone.stdout }}"
+        quiet: true
