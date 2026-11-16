@@ -1,3 +1,3 @@
-{% for key in mcp_gate_ro_keys %}
-command="/usr/local/libexec/mcp-gate ro",restrict {{ key | trim }}
+{% for key in mcp_gate_account.authorized %}
+command="/usr/local/libexec/mcp-gate {{ mcp_gate_account.mode }}",restrict {{ key | trim }}
 {% endfor %}

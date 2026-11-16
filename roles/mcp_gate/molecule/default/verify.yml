@@ -4,7 +4,10 @@
   gather_facts: false
   vars:
     gate_ok: ["vms", "vm-info web01"]
-    gate_refused: ["reboot", "vms; id", "vm-info nope", "vm-info --all", "journal evil", "vm-start web01"]
+    gate_refused: ["reboot", "vms; id", "vm-info nope", "vm-info --all", "journal evil", "vm-start web01",
+                   "vm-start hypr-test"]
+    ops_refused: ["vm-start ai01", "vm-start web01", "vms", "vm-info web01", "destroy hypr-test",
+                  "vm-start hypr-test web01", "vm-shutdown hypr-test; id"]
     verify_modes:
       /home/mcp-ro: "0755"
       /usr/local/libexec/mcp-gate: "0755"
@@ -55,7 +58,7 @@
         argv: "{{ item }}"
       loop:
         - [runuser, -u, mcp-ro, --, /usr/local/libexec/mcp-gate, ro]
-        - [runuser, -u, mcp-ro, --, env, SSH_ORIGINAL_COMMAND=vms, /usr/local/libexec/mcp-gate, ops]
+        - [runuser, -u, mcp-ro, --, env, SSH_ORIGINAL_COMMAND=vms, /usr/local/libexec/mcp-gate, rw]
       register: mcp_gate_verify_other
       changed_when: false
       failed_when: mcp_gate_verify_other.rc != 2
@@ -123,3 +126,117 @@
           - (mcp_gate_verify_files.results[1].content | b64decode | from_json).storage_paths == ['/var/lib/libvirt/images']
           - "'virtqemud' in (mcp_gate_verify_files.results[1].content | b64decode | from_json).journal_units"
         quiet: true
+
+    - name: Start the allowlisted VM as mcp-ops
+      ansible.builtin.command:
+        argv: [runuser, -u, mcp-ops, --, env, "SSH_ORIGINAL_COMMAND=vm-start hypr-test", /usr/local/libexec/mcp-gate, ops]
+      register: mcp_gate_verify_ops_start
+      changed_when: false
+
+    - name: Read what the stub virsh was asked to do read-write
+      ansible.builtin.slurp:
+        src: /tmp/virsh-rw.log
+      register: mcp_gate_verify_rw_log
+
+    - name: Check the start ran once, read-write, and reported the new state
+      ansible.builtin.assert:
+        that:
+          - mcp_gate_verify_ops_start.rc == 0
+          - "(mcp_gate_verify_ops_start.stdout | from_json).data == {'vm': 'hypr-test', 'action': 'start', 'changed': true, 'state': 'running'}"
+          - (mcp_gate_verify_rw_log.content | b64decode).splitlines() == ['start hypr-test']
+        fail_msg: "{{ mcp_gate_verify_ops_start.stdout }} / {{ mcp_gate_verify_rw_log.content | b64decode }}"
+        quiet: true
+
+    - name: Run the refused ops requests as mcp-ops
+      ansible.builtin.command:
+        argv: [runuser, -u, mcp-ops, --, env, "SSH_ORIGINAL_COMMAND={{ item }}", /usr/local/libexec/mcp-gate, ops]
+      loop: "{{ ops_refused }}"
+      register: mcp_gate_verify_ops_refused
+      changed_when: false
+      failed_when: false
+
+    - name: Check each ops request outside the allowlist was refused with exit 2
+      ansible.builtin.assert:
+        that:
+          - item.rc == 2
+          - (item.stdout | from_json).error is search('^refused:')
+        fail_msg: "{{ item.item }}: rc={{ item.rc }} {{ item.stdout }}"
+        quiet: true
+      loop: "{{ mcp_gate_verify_ops_refused.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read mcp-ops's groups, password field and shell, and what it owns in its home
+      ansible.builtin.command:
+        argv: [sh, -c, "id -nG mcp-ops; getent shadow mcp-ops | cut -d: -f2; getent passwd mcp-ops | cut -d: -f7; find /home/mcp-ops -user mcp-ops | wc -l"]
+      register: mcp_gate_verify_ops_account
+      changed_when: false
+
+    - name: Read mcp-ops's authorized_keys and the gate config
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop: [/home/mcp-ops/.ssh/authorized_keys, /etc/mcp-gate.json]
+      register: mcp_gate_verify_ops_files
+
+    - name: Check mcp-ops is in libvirt and systemd-journal, locked, owns nothing, and its key is forced to ops
+      ansible.builtin.assert:
+        that:
+          - "'libvirt' in mcp_gate_verify_ops_account.stdout_lines[0].split()"
+          - "'systemd-journal' in mcp_gate_verify_ops_account.stdout_lines[0].split()"
+          - mcp_gate_verify_ops_account.stdout_lines[1] is match('^!')
+          - mcp_gate_verify_ops_account.stdout_lines[2] == '/bin/bash'
+          - mcp_gate_verify_ops_account.stdout_lines[3] == '0'
+          - (mcp_gate_verify_ops_files.results[0].content | b64decode).splitlines() | length == 1
+          - (mcp_gate_verify_ops_files.results[0].content | b64decode) is match('^command="/usr/local/libexec/mcp-gate ops",restrict ssh-ed25519 ')
+          - (mcp_gate_verify_ops_files.results[1].content | b64decode | from_json).ops_vms == ['hypr-test']
+        fail_msg: "{{ mcp_gate_verify_ops_account.stdout_lines }}"
+        quiet: true
+
+# Revoking: with no ops keys any more, the ops account (in libvirt) and its keys must go,
+# not linger with a key that still works.
+- name: Verify emptying mcp_gate_ops_keys removes the ops account
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply mcp_gate again without ops keys
+      ansible.builtin.include_role:
+        name: danmwallace.linux.mcp_gate
+      vars:
+        mcp_gate_version: test
+        mcp_gate_source: "file://{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/homelab-mcp"
+        mcp_gate_cache_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/cache"
+        mcp_gate_ro_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA molecule@test
+
+    - name: Look up mcp-ops and its home
+      ansible.builtin.command:
+        argv: [sh, -c, "getent passwd mcp-ops; test -e /home/mcp-ops && echo home-left; true"]
+      register: mcp_gate_verify_ops_gone
+      changed_when: false
+
+    - name: Check mcp-ops and its home are gone, and mcp-ro still works
+      ansible.builtin.assert:
+        that: mcp_gate_verify_ops_gone.stdout | trim == ''
+        fail_msg: "{{ mcp_gate_verify_ops_gone.stdout }}"
+        quiet: true
+
+# Entries the role must refuse before it changes anything.
+- name: Verify unsafe ops settings are refused
+  hosts: molecule
+  gather_facts: true
+  vars:
+    verify_ro_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA molecule@test
+  tasks:
+    - name: Try each unsafe setting
+      ansible.builtin.include_tasks: tasks/verify-refused.yml
+      loop:
+        # Revocation removes /home/<ops user>: never a real login's.
+        - { vars: { mcp_gate_ops_user: root }, expect: "mcp_gate_ops_user must start with mcp-" }
+        # The same key in both lists would let the read-only key reach ops.
+        - vars:
+            mcp_gate_ops_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA other@test"]
+            mcp_gate_ops_vms: [hypr-test]
+          expect: "a key can't be in both mcp_gate_ro_keys and mcp_gate_ops_keys"
+      loop_control:
+        loop_var: case
+        label: "{{ case.expect }}"

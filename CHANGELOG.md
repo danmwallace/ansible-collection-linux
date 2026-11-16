@@ -7,6 +7,12 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-16
+
+### Added
+
+- `mcp_gate`: an optional `mcp-ops` account (`mcp_gate_ops_keys`, `mcp_gate_ops_user`) for the gate's `ops` mode (homelab-mcp 0.3.0): `vm-start` and `vm-shutdown` (ACPI) for the VMs in `mcp_gate_ops_vms` only. It's in `libvirt`; its forced command and the allowlist are its limit. `mcp-ro` is unchanged and still refused membership of `libvirt`. Emptying `mcp_gate_ops_keys` removes `mcp-ops` and its home, so revoking leaves no working key.
+
 ## [1.11.0] - 2026-11-15
 
 Deferred minors from the personal-layer reviews (piece 2).

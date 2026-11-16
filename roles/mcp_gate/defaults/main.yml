@@ -6,6 +6,12 @@ mcp_gate_src_dir: ""
 # Where the controller keeps clones, one folder per version.
 mcp_gate_cache_dir: "{{ lookup('env', 'HOME') }}/.cache/mcp-gate"
 mcp_gate_ro_user: mcp-ro
+# The ops account (gate mode ops: vm-start/vm-shutdown for mcp_gate_ops_vms only). It's
+# created only when mcp_gate_ops_keys holds a key.
+mcp_gate_ops_user: mcp-ops
+mcp_gate_ops_keys: []
+# VMs the ops mode may start and shut down. Empty refuses every ops request.
+mcp_gate_ops_vms: []
 # Units whose journal the gate's `journal` verb may read (srv01 runs the modular libvirt daemons).
 mcp_gate_journal_units:
   - virtqemud
