@@ -25,7 +25,7 @@ This role installs an SSH forced-command gate on a [libvirt](https://libvirt.org
 | `mcp_gate_src_dir` | str | no | `""` | A controller path to a homelab-mcp checkout. When set, nothing is cloned. |
 | `mcp_gate_cache_dir` | str | no | `~/.cache/mcp-gate` (controller user) | Where the controller keeps homelab-mcp clones, one folder per version. |
 | `mcp_gate_ro_user` | str | no | `mcp-ro` | The read-only account. |
-| `mcp_gate_ops_user` | str | no | `mcp-ops` | The ops account, in `libvirt`. Created only when `mcp_gate_ops_keys` holds a key. |
+| `mcp_gate_ops_user` | str | no | `mcp-ops` | The ops account, in `libvirt`. Created only when `mcp_gate_ops_keys` holds a key. Must start with `mcp-`. |
 | `mcp_gate_ops_keys` | list of str | no | `[]` | ed25519 public keys allowed to call the gate in `ops` mode, each a single `ssh-ed25519 <key> [comment]` line. Each gets `command="…mcp-gate ops",restrict`. Emptying it removes the ops account and its home (revocation). |
 | `mcp_gate_ops_vms` | list of str | no | `[]` | VMs the `ops` mode may start and shut down. Empty refuses every ops request; required when `mcp_gate_ops_keys` is set. |
 | `mcp_gate_journal_units` | list of str | no | `[virtqemud, virtnetworkd, virtstoraged, virtlogd, ha-dongle-reattach, cockpit, sshd, NetworkManager, chronyd]` | Units the gate's `journal` verb may read. |
@@ -50,7 +50,7 @@ None declared in `meta/main.yml`. Only `ansible.builtin` modules are used.
 
 ## What the Role Does
 
-1. Checks that `mcp_gate_ro_keys` has at least one key, that every ro and ops key is a single `ssh-ed25519` line, that ops keys come with a non-empty `mcp_gate_ops_vms`, and that the two account names differ.
+1. Checks that `mcp_gate_ro_keys` has at least one key, that every ro and ops key is a single `ssh-ed25519` line, that ops keys come with a non-empty `mcp_gate_ops_vms`, that no key is in both lists, and that `mcp_gate_ops_user` starts with `mcp-` (revoking removes that account and its home, so it can never be a real login).
 2. Clones `mcp_gate_source` at `mcp_gate_version` on the controller, into `<mcp_gate_cache_dir>/<version>`. It runs once, as the controller user, without become, and in check mode too: it changes nothing on the target, and the next step needs the file. It's skipped when `mcp_gate_src_dir` is set.
 3. Installs `gate/mcp-gate` as `/usr/local/libexec/mcp-gate` (root, 0755).
 4. Writes `/etc/mcp-gate.json` from `mcp_gate_journal_units`, `mcp_gate_storage_paths` and `mcp_gate_ops_vms`.

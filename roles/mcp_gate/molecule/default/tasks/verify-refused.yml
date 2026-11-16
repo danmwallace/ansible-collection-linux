@@ -1,0 +1,24 @@
+---
+- name: Apply mcp_gate with an unsafe setting
+  block:
+    - name: Apply mcp_gate
+      ansible.builtin.include_role:
+        name: danmwallace.linux.mcp_gate
+      vars:
+        mcp_gate_version: test
+        mcp_gate_source: "file://{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/homelab-mcp"
+        mcp_gate_cache_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/cache"
+        mcp_gate_ro_keys: ["{{ verify_ro_key }}"]
+        mcp_gate_ops_user: "{{ case.vars.mcp_gate_ops_user | default('mcp-ops') }}"
+        mcp_gate_ops_keys: "{{ case.vars.mcp_gate_ops_keys | default([]) }}"
+        mcp_gate_ops_vms: "{{ case.vars.mcp_gate_ops_vms | default([]) }}"
+
+    - name: Fail, because the setting was accepted
+      ansible.builtin.fail:
+        msg: "the role accepted this setting"
+  rescue:
+    - name: Check it was refused for the expected reason
+      ansible.builtin.assert:
+        that: case.expect in (ansible_failed_result.msg | default(''))
+        fail_msg: "expected '{{ case.expect }}', got: {{ ansible_failed_result.msg | default('') }}"
+        quiet: true

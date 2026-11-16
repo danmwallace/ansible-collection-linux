@@ -12,11 +12,25 @@
     that:
       - mcp_gate_ops_keys | reject('match', '^ssh-ed25519 [A-Za-z0-9+/=]+( \S+)?\s*$') | list | length == 0
       - mcp_gate_ops_keys | length == 0 or mcp_gate_ops_vms | length > 0
-      - mcp_gate_ops_user | length > 0 and mcp_gate_ops_user != mcp_gate_ro_user
     fail_msg: >-
       mcp_gate_ops_keys must be single "ssh-ed25519 <key> [comment]" lines and need a
-      non-empty mcp_gate_ops_vms (without one the gate refuses every ops request);
-      mcp_gate_ops_user must be set and differ from mcp_gate_ro_user.
+      non-empty mcp_gate_ops_vms (without one the gate refuses every ops request).
+    quiet: true
+
+# Emptying mcp_gate_ops_keys removes /home/<ops user> and the account: never a real login's.
+- name: Check the ops account name
+  ansible.builtin.assert:
+    that: mcp_gate_ops_user is match('^mcp-[a-z0-9-]+$') and mcp_gate_ops_user != mcp_gate_ro_user
+    fail_msg: "mcp_gate_ops_user must start with mcp- (and differ from mcp_gate_ro_user): revoking removes that account and its home"
+    quiet: true
+
+# The same key in both lists would let the read-only key reach ops.
+- name: Check no key is both read-only and ops
+  ansible.builtin.assert:
+    that: >-
+      mcp_gate_ro_keys | map('split') | map(attribute=1)
+      | intersect(mcp_gate_ops_keys | map('split') | map(attribute=1)) | length == 0
+    fail_msg: "a key can't be in both mcp_gate_ro_keys and mcp_gate_ops_keys"
     quiet: true
 
 - name: Settle where gate/mcp-gate comes from

@@ -219,3 +219,24 @@
         that: mcp_gate_verify_ops_gone.stdout | trim == ''
         fail_msg: "{{ mcp_gate_verify_ops_gone.stdout }}"
         quiet: true
+
+# Entries the role must refuse before it changes anything.
+- name: Verify unsafe ops settings are refused
+  hosts: molecule
+  gather_facts: true
+  vars:
+    verify_ro_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA molecule@test
+  tasks:
+    - name: Try each unsafe setting
+      ansible.builtin.include_tasks: tasks/verify-refused.yml
+      loop:
+        # Revocation removes /home/<ops user>: never a real login's.
+        - { vars: { mcp_gate_ops_user: root }, expect: "mcp_gate_ops_user must start with mcp-" }
+        # The same key in both lists would let the read-only key reach ops.
+        - vars:
+            mcp_gate_ops_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyNotARealKeyAAAAAAAAAAA other@test"]
+            mcp_gate_ops_vms: [hypr-test]
+          expect: "a key can't be in both mcp_gate_ro_keys and mcp_gate_ops_keys"
+      loop_control:
+        loop_var: case
+        label: "{{ case.expect }}"
