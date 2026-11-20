@@ -44,6 +44,18 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 - `cockpit_allowed_cidr` (singular): no longer defaults to `10.0.0.0/8`. If set, it is
   appended to `cockpit_allowed_cidrs` and a deprecation notice is printed.
 
+### Fixed
+
+- `mikrotik_backup`, `cloudflare_ssl`: no longer fail on image-based hosts
+  (bootc, rpm-ostree), the same way `restic_backup` was fixed in 1.9.0 (#31).
+  There `ansible_facts.pkg_mgr` is `atomic_container`, and the roles'
+  `package` tasks dispatched to `community.general.atomic_container`, which
+  community.general 13.0.0 removed. The new `mikrotik_backup_install_packages`
+  and `cloudflare_ssl_install_packages` (default: `false` when `pkg_mgr` is
+  `atomic_container`, else `true`) skip the installs; the roles then check
+  that `sftp` / `ssh` (mikrotik_backup) or `certbot` (cloudflare_ssl) are on
+  the `PATH` and fail naming what the OS image must provide.
+
 ## [1.12.0] - 2026-11-16
 
 ### Added

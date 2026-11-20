@@ -16,7 +16,9 @@
     name: "{{ cloudflare_ssl_debian_packages }}"
     state: present
   become: true
-  when: ansible_facts.os_family == "Debian"
+  when:
+    - cloudflare_ssl_install_packages | bool
+    - ansible_facts.os_family == "Debian"
   register: _cloudflare_ssl_pkg_debian
 
 - name: Ensure certbot and the Cloudflare DNS plugin are installed (RedHat family)
@@ -24,8 +26,41 @@
     name: "{{ cloudflare_ssl_fedora_packages }}"
     state: present
   become: true
-  when: ansible_facts.os_family == "RedHat"
+  when:
+    - cloudflare_ssl_install_packages | bool
+    - ansible_facts.os_family == "RedHat"
   register: _cloudflare_ssl_pkg_redhat
+
+# With installs off (image-based hosts) nothing above ran, so fail here, naming
+# what is missing, rather than later with "certbot: command not found".
+- name: Check which required binaries are on the PATH
+  ansible.builtin.command:
+    argv: [sh, -c, 'command -v "$1"', sh, "{{ item.bin }}"]
+  loop: "{{ _cloudflare_ssl_required_binaries }}"
+  loop_control:
+    label: "{{ item.bin }}"
+  register: _cloudflare_ssl_binary_check
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only
+  become: true
+  when: not (cloudflare_ssl_install_packages | bool)
+
+- name: Assert the image provides every binary the role needs
+  ansible.builtin.assert:
+    that: _cloudflare_ssl_missing_binaries | length == 0
+    fail_msg: >-
+      Not found on the PATH of {{ inventory_hostname }}:
+      {% for b in _cloudflare_ssl_missing_binaries %}{{ b.bin }} (package {{ b.package }}){{ ', ' if not loop.last }}{% endfor %}.
+      cloudflare_ssl_install_packages is false (the default on image-based hosts
+      such as bootc, where the package manager cannot install into the read-only
+      /usr), so the OS image must provide these binaries. Add them to the image,
+      or set cloudflare_ssl_install_packages to true on a host that can install packages.
+    quiet: true
+  vars:
+    _cloudflare_ssl_missing_binaries: >-
+      {{ _cloudflare_ssl_binary_check.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
+  when: not (cloudflare_ssl_install_packages | bool)
 
 - name: Ensure the directory for Cloudflare credentials exists
   ansible.builtin.file:
