@@ -8,3 +8,8 @@
         name: danmwallace.linux.cockpit
       vars:
         cockpit_hostname: cockpit.test.local
+        cockpit_allowed_cidrs:
+          - 192.168.70.0/24
+          - 2001:db8:70::/48
+        # Deprecated singular var: must still be honoured alongside the list.
+        cockpit_allowed_cidr: 10.10.99.0/24

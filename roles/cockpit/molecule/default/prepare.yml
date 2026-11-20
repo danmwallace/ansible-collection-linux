@@ -35,3 +35,11 @@
           -keyout /etc/letsencrypt/live/cockpit.test.local/privkey.pem
           -out /etc/letsencrypt/live/cockpit.test.local/fullchain.pem
         creates: /etc/letsencrypt/live/cockpit.test.local/fullchain.pem
+
+    # Fedora's installer enables this zone-wide service; the role must remove it.
+    - name: Plant the zone-wide cockpit firewalld service the role must disable
+      ansible.posix.firewalld:
+        service: cockpit
+        state: enabled
+        permanent: true
+        immediate: true

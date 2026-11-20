@@ -1,2 +1,10 @@
 ---
 # vars file for cockpit
+
+# Effective allowlist for 9090: cockpit_allowed_cidrs plus the deprecated
+# singular cockpit_allowed_cidr when a caller still sets it. Kept here (not in
+# defaults) so callers can't override the merge itself.
+cockpit_firewall_cidrs: >-
+  {{ (cockpit_allowed_cidrs
+      + ([cockpit_allowed_cidr] if (cockpit_allowed_cidr | default('', true) | length > 0) else []))
+     | unique }}

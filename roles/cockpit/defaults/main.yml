@@ -13,13 +13,20 @@ cockpit_cert_mode: "0600"
 # cockpit.service is static on Fedora, so the socket is the unit to manage.
 cockpit_service_name: cockpit.socket
 
-# Source CIDRs allowed to reach Cockpit on port 9090 through firewalld
-# (RedHat family). Empty means the firewall is left untouched.
+# Source CIDRs allowed to reach Cockpit on TCP 9090. One list for both firewall
+# backends: each entry becomes a firewalld rich rule (RedHat family) or a UFW
+# allow rule (Ubuntu). REQUIRED while cockpit_manage_firewall is true: the role
+# fails early when it is empty rather than leave 9090 open to every source.
 cockpit_allowed_cidrs: []
 
+# Let the role manage the host firewall for 9090. Set false only when something
+# else (another role, a cloud security group) scopes 9090; the role then skips
+# the CIDR check and every firewall task, and exposure is your responsibility.
+cockpit_manage_firewall: true
+
 # firewalld ships a zone-wide "cockpit" service (all sources, port 9090) that an
-# additive rich rule cannot narrow. Disable it once cockpit_allowed_cidrs is set,
-# so only the rich rules above grant access.
+# additive rich rule cannot narrow. Disable it so only the per-CIDR rich rules
+# grant access.
 cockpit_remove_blanket_firewalld_service: true
 
 # firewalld zone the rich rules and blanket-service removal act on. Empty string
@@ -28,7 +35,6 @@ cockpit_remove_blanket_firewalld_service: true
 # non-default zone, or the rules land in a zone nothing uses.
 cockpit_firewalld_zone: ""
 
-# Source CIDR allowed to reach Cockpit (port 9090) via UFW on Ubuntu. Defaults to
-# RFC-1918 private ranges; set to your homelab CIDR (e.g. 192.168.1.0/24) for
-# tighter scoping.
-cockpit_allowed_cidr: "10.0.0.0/8"
+# cockpit_allowed_cidr (singular str, formerly UFW-only, default "10.0.0.0/8") is
+# deprecated and has no default. If set, it is still honoured: it is appended to
+# cockpit_allowed_cidrs (see vars/main.yml) and a deprecation notice is printed.

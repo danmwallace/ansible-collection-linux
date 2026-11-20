@@ -5,6 +5,30 @@
 # cockpit_letsencrypt_cert_path = directory holding the Let's Encrypt lineage
 # cockpit_cert_path             = directory Cockpit reads its TLS material from
 
+# Fail before touching the host: with no CIDRs the firewall tasks would either do
+# nothing (firewalld keeps its zone-wide cockpit service) or need an open-to-all
+# fallback. Neither is a safe default for a root-capable web console.
+- name: Assert Cockpit has an allowlist to scope TCP 9090 to
+  ansible.builtin.assert:
+    that: cockpit_firewall_cidrs | length > 0
+    fail_msg: >-
+      cockpit_allowed_cidrs is empty, so this role would leave Cockpit (TCP 9090)
+      open to every source. Set cockpit_allowed_cidrs to the management networks
+      that may reach it (e.g. ["192.168.70.0/24"]), or set
+      cockpit_manage_firewall: false if something else scopes port 9090.
+    quiet: true
+  when:
+    - cockpit_manage_firewall
+    - ansible_facts.os_family == "RedHat" or ansible_facts.distribution == "Ubuntu"
+
+- name: Warn that cockpit_allowed_cidr is deprecated
+  ansible.builtin.debug:
+    msg: >-
+      DEPRECATED: cockpit_allowed_cidr ({{ cockpit_allowed_cidr }}) is still honoured
+      but will be removed in a future major release. Move it into the
+      cockpit_allowed_cidrs list.
+  when: cockpit_allowed_cidr | default('', true) | length > 0
+
 - name: Ensure the Cockpit certificate directory exists
   ansible.builtin.file:
     path: "{{ cockpit_cert_path }}"
@@ -86,16 +110,18 @@
 
 - name: Ensure Cockpit is reachable from the allowed CIDRs (firewalld)
   ansible.posix.firewalld:
-    rich_rule: "rule family=ipv4 source address={{ item }} port port=9090 protocol=tcp accept"
+    rich_rule: >-
+      rule family={{ 'ipv6' if ':' in item else 'ipv4' }}
+      source address={{ item }} port port=9090 protocol=tcp accept
     zone: "{{ cockpit_firewalld_zone | default(omit, true) }}"
     permanent: true
     immediate: true
     state: enabled
-  loop: "{{ cockpit_allowed_cidrs }}"
+  loop: "{{ cockpit_firewall_cidrs }}"
   become: true
   when:
+    - cockpit_manage_firewall
     - ansible_facts.os_family == "RedHat"
-    - cockpit_allowed_cidrs | length > 0
 
 # Additive rich rules cannot narrow access while the zone-wide "cockpit" firewalld
 # service (all sources, port 9090) stays enabled; it must be disabled for the rich
@@ -109,18 +135,34 @@
     immediate: true
   become: true
   when:
+    - cockpit_manage_firewall
     - ansible_facts.os_family == "RedHat"
-    - cockpit_allowed_cidrs | length > 0
     - cockpit_remove_blanket_firewalld_service
 
-- name: Ensure Cockpit is reachable from the allowed CIDR (UFW)
+- name: Ensure Cockpit is reachable from the allowed CIDRs (UFW)
   community.general.ufw:
     rule: allow
     port: "9090"
     proto: tcp
-    from_ip: "{{ cockpit_allowed_cidr }}"
+    from_ip: "{{ item }}"
+  loop: "{{ cockpit_firewall_cidrs }}"
   become: true
   notify: Restart cockpit
   when:
-    - ansible_facts.os_family == "Debian"
+    - cockpit_manage_firewall
     - ansible_facts.distribution == "Ubuntu"
+
+# Earlier releases opened 9090 from 10.0.0.0/8 on every Ubuntu run by default.
+# Narrowing the allowlist must also close that rule, or the old exposure stays.
+- name: Ensure the legacy 10.0.0.0/8 Cockpit UFW rule is absent
+  community.general.ufw:
+    rule: allow
+    port: "9090"
+    proto: tcp
+    from_ip: 10.0.0.0/8
+    delete: true
+  become: true
+  when:
+    - cockpit_manage_firewall
+    - ansible_facts.distribution == "Ubuntu"
+    - "'10.0.0.0/8' not in cockpit_firewall_cidrs"

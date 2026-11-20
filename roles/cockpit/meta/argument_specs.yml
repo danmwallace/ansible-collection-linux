@@ -30,11 +30,12 @@ argument_specs:
         default: "/etc/cockpit/ws-certs.d"
       cockpit_allowed_cidr:
         description:
-          - Source CIDR allowed to reach Cockpit on port 9090 via UFW (Ubuntu only).
-            Restrict to your homelab or VPN CIDR for tighter scoping.
+          - DEPRECATED; use C(cockpit_allowed_cidrs). A single source CIDR, formerly
+            UFW-only with a default of C(10.0.0.0/8). It no longer has a default; if
+            set, it is appended to C(cockpit_allowed_cidrs) for both firewall
+            backends and a deprecation notice is printed.
         type: str
         required: false
-        default: "10.0.0.0/8"
       cockpit_cert_owner:
         description:
           - Owner of the certificate and key in C(cockpit_cert_path). Defaults to
@@ -62,18 +63,28 @@ argument_specs:
         default: cockpit.socket
       cockpit_allowed_cidrs:
         description:
-          - Source CIDRs allowed to reach Cockpit on TCP 9090 through firewalld
-            (RedHat-family hosts). Each entry becomes a rich rule. An empty list leaves
-            the firewall untouched, so upgrading never opens a port by itself.
+          - Source CIDRs (IPv4 or IPv6) allowed to reach Cockpit on TCP 9090. Each
+            entry becomes a firewalld rich rule on RedHat-family hosts or a UFW allow
+            rule on Ubuntu.
+          - Required while C(cockpit_manage_firewall) is true on those hosts; the role
+            fails early when it is empty instead of leaving 9090 open to every source.
         type: list
         elements: str
         required: false
         default: []
+      cockpit_manage_firewall:
+        description:
+          - Manage the host firewall (firewalld or UFW) for TCP 9090. Set false only
+            when something else scopes port 9090; the role then skips the
+            C(cockpit_allowed_cidrs) check and all firewall tasks.
+        type: bool
+        required: false
+        default: true
       cockpit_remove_blanket_firewalld_service:
         description:
           - Disables the zone-wide C(cockpit) firewalld service (RedHat-family
             hosts), so only the C(cockpit_allowed_cidrs) rich rules grant access to
-            port 9090. Acts only when C(cockpit_allowed_cidrs) is non-empty.
+            port 9090. Acts only when C(cockpit_manage_firewall) is true.
         type: bool
         required: false
         default: true
