@@ -16,6 +16,20 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
   (UFW) or leaving firewalld's zone-wide `cockpit` service open to every source (#21, #23).
 - `cockpit`: on Ubuntu, the `9090/tcp ALLOW 10.0.0.0/8` UFW rule the old default created is
   removed unless `10.0.0.0/8` is in the allowlist.
+- `raspberry_pi_network_toolkit`: image and version pins raised to the latest
+  upstream releases (#18, #25, #26).
+  - `portainer_version` 2.39.4 → 2.45.4. Portainer migrates its database on
+    start; back up `portainer_data` first. Since 2.43 a fresh instance needs
+    the one-time setup token from its log to create the first administrator.
+  - `netdata_version` v2.5.3 → v2.13.0.
+  - `uptime_kuma_version` 2.4.0 → 2.5.12.
+  - `portainer_socket_proxy_version` "0.4.2" → "v0.5.0". The old value named
+    a tag that doesn't exist on ghcr.io (tags are `v`-prefixed from 0.4), so
+    a fresh deploy failed to pull. v0.5.0 is upstream's last versioned tag.
+  - `docker_compose_version` v5.5.0 → v5.8.0 (informational; the role
+    installs the distribution's `docker-compose-plugin`).
+  - The compose template no longer carries its own fallback pins; it uses the
+    role defaults only.
 
 ### Added
 

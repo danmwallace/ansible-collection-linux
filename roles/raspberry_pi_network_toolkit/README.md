@@ -32,7 +32,7 @@ Defaults are defined in `defaults/main.yml`.
 | `toolkit_user` | `pi` | Local user that owns toolkit assets and gets Docker group membership |
 | `install_docker` | `true` | Install and configure Docker engine + compose plugin |
 | `install_gui_tools` | `false` | Reserved toggle for GUI tools (currently not used in tasks) |
-| `docker_compose_version` | `v2.23.0` | Reserved compose version variable (currently not used in tasks) |
+| `docker_compose_version` | `v5.8.0` | Reserved compose version variable (currently not used in tasks) |
 | `enable_monitoring` | `true` | Deploy monitoring stack with Docker Compose |
 | `monitoring_ports.portainer` | `9000` | Portainer host port |
 | `monitoring_ports.netdata` | `19999` | Netdata host port |
@@ -71,4 +71,9 @@ No Ansible role dependencies are declared in `meta/main.yml`.
 - Docker monitoring services are only deployed when both `install_docker` and `enable_monitoring` are `true`.
 - The role creates an external Docker network named `proxy_network`.
 - `testssl.sh` is installed to `/opt/testssl.sh` and linked at `/usr/local/bin/testssl`.
-
+- Portainer (since 2.43) needs a one-time setup token to create the first
+  administrator on a new instance; read it with `docker logs portainer`.
+- Portainer and Uptime Kuma migrate their databases when a newer image starts
+  and can't be rolled back afterwards. Back up the `portainer_data` and
+  `uptime-kuma` volumes before raising `portainer_version` or
+  `uptime_kuma_version` on an existing install.

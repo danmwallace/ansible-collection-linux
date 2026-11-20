@@ -1,6 +1,6 @@
 services:
   socket-proxy:
-    image: ghcr.io/tecnativa/docker-socket-proxy:{{ portainer_socket_proxy_version | default('0.4.2') }}
+    image: ghcr.io/tecnativa/docker-socket-proxy:{{ portainer_socket_proxy_version }}
     container_name: toolkit-socket-proxy
     restart: unless-stopped
     volumes:
@@ -23,7 +23,7 @@ services:
       - socket_proxy_net
 
   portainer:
-    image: portainer/portainer-ce:{{ portainer_version | default('2.39.4') }}
+    image: portainer/portainer-ce:{{ portainer_version }}
     container_name: portainer
     depends_on:
       - socket-proxy
@@ -45,7 +45,7 @@ services:
     restart: unless-stopped
 
   netdata:
-    image: netdata/netdata:{{ netdata_version | default('v2.5.3') }}
+    image: netdata/netdata:{{ netdata_version }}
     container_name: netdata
     depends_on:
       - socket-proxy
@@ -75,7 +75,7 @@ services:
     restart: unless-stopped
 
   uptime-kuma:
-    image: louislam/uptime-kuma:{{ uptime_kuma_version | default('2.4.0') }}
+    image: louislam/uptime-kuma:{{ uptime_kuma_version }}
     container_name: uptime-kuma
     volumes:
       - uptime-kuma:/app/data
