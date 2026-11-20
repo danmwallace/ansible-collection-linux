@@ -71,6 +71,14 @@ argument_specs:
         description: When today's pair is missing or incomplete, accept yesterday's pair instead of failing the device.
         type: bool
         default: false
+      mikrotik_backup_install_packages:
+        description:
+          - Install the SFTP client (openssh-clients) with the package module.
+          - Defaults to false on image-based hosts (bootc, rpm-ostree), where ansible_facts.pkg_mgr is
+            atomic_container and the package module cannot install anything. The role then only checks
+            that sftp and ssh are on the PATH and fails naming what the image lacks.
+        type: bool
+        default: "{{ ansible_facts.pkg_mgr != 'atomic_container' }}"
       mikrotik_backup_ssh_key_path:
         description: Private key path for the dedicated SSH identity. The public key is written next to it with a .pub suffix.
         type: str

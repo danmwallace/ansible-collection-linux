@@ -177,3 +177,108 @@
           - "home-01-{{ mikrotik_backup_t_today.stdout }}.rsc"
           - "home-sw01-{{ mikrotik_backup_t_today.stdout }}.backup"
           - "home-sw01-{{ mikrotik_backup_t_today.stdout }}.rsc"
+
+# --- mikrotik_backup_install_packages: image-based hosts (bootc, rpm-ostree) ---
+# Present the container as one by setting the fact the role default reads
+# (ansible_facts.pkg_mgr == 'atomic_container'), instead of passing
+# mikrotik_backup_install_packages, so the default itself is under test.
+- name: Verify package installs are skipped on an image-based host
+  hosts: molecule
+  gather_facts: true
+  pre_tasks:
+    - name: Read the test device host key
+      ansible.builtin.slurp:
+        src: /tmp/molecule-device-host-key
+      register: mikrotik_backup_t_host_key
+  vars:
+    _t_role_vars: &t_role_vars
+      mikrotik_backup_devices:
+        - name: gw
+          host: 127.0.0.1
+          host_key: "{{ mikrotik_backup_t_host_key.content | b64decode | trim }}"
+          identity: home-01
+        - name: sw
+          host: localhost
+          host_key: "{{ mikrotik_backup_t_host_key.content | b64decode | trim }}"
+          identity: home-sw01
+      mikrotik_backup_kuma_push_url: https://kuma.invalid/api/push/molecule
+      mikrotik_backup_device_timezone: Etc/GMT-14
+  tasks:
+    - name: Record the real package manager
+      ansible.builtin.set_fact:
+        mikrotik_backup_t_real_pkg_mgr: "{{ ansible_facts.pkg_mgr }}"
+
+    - name: Present this host as image-based  # noqa: var-naming[no-role-prefix]  pkg_mgr is the fact under test
+      ansible.builtin.set_fact:
+        pkg_mgr: atomic_container
+        cacheable: true  # cacheable writes ansible_facts.pkg_mgr, not just a host var
+
+    - name: Apply the role on the image-based host while the SFTP client is present
+      ansible.builtin.include_role:
+        name: danmwallace.linux.mikrotik_backup
+      vars: *t_role_vars
+
+    - name: Assert the binary check ran and found sftp and ssh
+      ansible.builtin.assert:
+        that:
+          - _mikrotik_backup_binary_check.results | map(attribute='rc') | list == [0, 0]
+
+    # The package module would dispatch on the faked pkg_mgr, so name dnf5.
+    - name: Ensure openssh-clients is absent for the missing-binary check
+      ansible.builtin.dnf5:
+        name: openssh-clients
+        state: absent
+
+    - name: Apply the role on the image-based host while the SFTP client is missing
+      block:
+        - name: Run the role expected to fail (no sftp, no ssh)
+          ansible.builtin.include_role:
+            name: danmwallace.linux.mikrotik_backup
+          vars: *t_role_vars
+        - name: Record that the missing binaries were not caught
+          ansible.builtin.set_fact:
+            mikrotik_backup_t_nopkg_failed: false
+      rescue:
+        - name: Record that the missing binaries failed the play
+          ansible.builtin.set_fact:
+            mikrotik_backup_t_nopkg_failed: true
+            mikrotik_backup_t_nopkg_msg: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Check whether sftp came back
+      ansible.builtin.command:
+        argv: [sh, -c, command -v sftp]
+      register: mikrotik_backup_t_nopkg_bin
+      changed_when: false
+      failed_when: false
+
+    - name: Assert missing binaries fail the role, naming them and the image, without installing them
+      ansible.builtin.assert:
+        that:
+          - mikrotik_backup_t_nopkg_failed
+          - "'sftp (package openssh-clients), ssh (package openssh-clients)' in mikrotik_backup_t_nopkg_msg"
+          - "'image must provide' in mikrotik_backup_t_nopkg_msg"
+          - mikrotik_backup_t_nopkg_bin.rc != 0
+        fail_msg: "failed: {{ mikrotik_backup_t_nopkg_failed }}, msg: {{ mikrotik_backup_t_nopkg_msg | default('') }}"
+
+    - name: Present this host as package-managed again  # noqa: var-naming[no-role-prefix]
+      ansible.builtin.set_fact:
+        pkg_mgr: "{{ mikrotik_backup_t_real_pkg_mgr }}"
+        cacheable: true
+
+    - name: Apply the role on the package-managed host
+      ansible.builtin.include_role:
+        name: danmwallace.linux.mikrotik_backup
+      vars: *t_role_vars
+
+    - name: Check sftp is installed again
+      ansible.builtin.command:
+        argv: [sh, -c, command -v sftp]
+      register: mikrotik_backup_t_repkg_bin
+      changed_when: false
+
+    - name: Assert the package-managed host installed the SFTP client
+      ansible.builtin.assert:
+        that:
+          - mikrotik_backup_t_real_pkg_mgr != 'atomic_container'
+          - _mikrotik_backup_binary_check is skipped
+          - mikrotik_backup_t_repkg_bin.stdout | length > 0

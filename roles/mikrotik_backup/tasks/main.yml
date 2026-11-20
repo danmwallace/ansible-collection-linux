@@ -32,6 +32,38 @@
   ansible.builtin.package:
     name: openssh-clients
     state: present
+  when: mikrotik_backup_install_packages | bool
+
+# With installs off (image-based hosts) nothing above ran, so fail here, naming
+# what is missing, rather than later with "sftp: command not found" from a
+# task or, worse, from the nightly service.
+- name: Check which required binaries are on the PATH
+  ansible.builtin.command:
+    argv: [sh, -c, 'command -v "$1"', sh, "{{ item.bin }}"]
+  loop: "{{ _mikrotik_backup_required_binaries }}"
+  loop_control:
+    label: "{{ item.bin }}"
+  register: _mikrotik_backup_binary_check
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only
+  when: not (mikrotik_backup_install_packages | bool)
+
+- name: Assert the image provides every binary the role needs
+  ansible.builtin.assert:
+    that: _mikrotik_backup_missing_binaries | length == 0
+    fail_msg: >-
+      Not found on the PATH of {{ inventory_hostname }}:
+      {% for b in _mikrotik_backup_missing_binaries %}{{ b.bin }} (package {{ b.package }}){{ ', ' if not loop.last }}{% endfor %}.
+      mikrotik_backup_install_packages is false (the default on image-based hosts
+      such as bootc, where the package manager cannot install into the read-only
+      /usr), so the OS image must provide these binaries. Add them to the image,
+      or set mikrotik_backup_install_packages to true on a host that can install packages.
+    quiet: true
+  vars:
+    _mikrotik_backup_missing_binaries: >-
+      {{ _mikrotik_backup_binary_check.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
+  when: not (mikrotik_backup_install_packages | bool)
 
 - name: Ensure mikrotik backup directories exist
   ansible.builtin.file:
