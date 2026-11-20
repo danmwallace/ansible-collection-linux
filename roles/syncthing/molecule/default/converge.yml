@@ -30,5 +30,5 @@
           address: tcp://127.0.0.1:22001
           api_url: https://127.0.0.1:8385
           api_fingerprint: "{{ syncthing_converge_hub_fp.content | b64decode | trim }}"
-          api_key: hub-test-key
+          api_key: hub-test-key  # molecule-test-only: fake value, not a real credential
           folder_paths: { syncthing: /home/nas/Syncthing }

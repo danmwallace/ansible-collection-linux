@@ -1,7 +1,7 @@
 ---
 # Role variables shared by converge and verify (verify re-applies the role).
 # _molecule_host_key is read by each play's pre_tasks.
-restic_backup_password: moleculeTestPassword123
+restic_backup_password: moleculeTestPassword123  # molecule-test-only: fake value, not a real credential
 restic_backup_nas_host: 127.0.0.1
 restic_backup_nas_host_key: "{{ _molecule_host_key.content | b64decode | trim }}"
 restic_backup_nas_user: restic-molecule

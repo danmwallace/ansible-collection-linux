@@ -56,6 +56,11 @@ collections:
     - role: danmwallace.linux.cockpit
 ```
 
+## Testing
+
+Molecule fixtures under `roles/*/molecule/` intentionally use fake credentials, each marked
+`# molecule-test-only`. Real secrets always come from Ansible Vault, never from committed files.
+
 ## License
 
 MIT

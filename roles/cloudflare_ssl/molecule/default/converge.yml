@@ -8,6 +8,6 @@
         name: danmwallace.linux.cloudflare_ssl
       vars:
         cloudflare_ssl_email: molecule@test.local
-        cloudflare_ssl_api_token: molecule-fake-token
+        cloudflare_ssl_api_token: molecule-fake-token  # molecule-test-only: fake value, not a real credential
         cloudflare_ssl_domains:
           - ssl.test.local
