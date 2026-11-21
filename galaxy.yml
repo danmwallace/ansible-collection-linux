@@ -60,6 +60,7 @@ issues: https://github.com/danmwallace/ansible-collection-linux/issues
 # uses 'fnmatch' to match the files or directories. Some directories and files like 'galaxy.yml', '*.pyc', '*.retry',
 # and '.git' are always filtered. Mutually exclusive with 'manifest'
 build_ignore:
+  - renovate.json
   - .github
   - molecule
   - roles/*/molecule
