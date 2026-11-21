@@ -13,7 +13,7 @@
 
     - name: Ensure the systemd test container is running
       containers.podman.podman_container:
-        name: git-repo-sync-instance
+        name: linux-git-repo-sync-instance
         image: localhost/git-repo-sync-molecule
         systemd: always
         # A user manager (lingering dev) fails here unprivileged: "Failed to allocate

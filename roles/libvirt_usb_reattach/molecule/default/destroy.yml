@@ -5,5 +5,5 @@
   tasks:
     - name: Ensure the test container is absent
       containers.podman.podman_container:
-        name: libvirt-usb-reattach-instance
+        name: linux-libvirt-usb-reattach-instance
         state: absent

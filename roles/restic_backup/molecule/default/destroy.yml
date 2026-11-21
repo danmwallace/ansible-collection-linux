@@ -5,5 +5,5 @@
   tasks:
     - name: Ensure the test container is absent
       containers.podman.podman_container:
-        name: restic-backup-instance
+        name: linux-restic-backup-instance
         state: absent

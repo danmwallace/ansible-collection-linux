@@ -13,7 +13,7 @@
 
     - name: Ensure the systemd test container is running
       containers.podman.podman_container:
-        name: mcp-gate-instance
+        name: linux-mcp-gate-instance
         image: localhost/mcp-gate-molecule
         systemd: always
         state: started

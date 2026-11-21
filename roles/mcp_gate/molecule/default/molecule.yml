@@ -1,17 +1,29 @@
 ---
+# Keep this run out of the owner's ~/.ansible; see .config/molecule/collections.yml.
+prerun: false
+dependency:
+  name: galaxy
+  options:
+    force: true
+    collections-path: ${MOLECULE_EPHEMERAL_DIRECTORY}/ansible_home/collections
+    requirements-file: ${MOLECULE_PROJECT_DIRECTORY}/../../.config/molecule/collections.yml
+ansible:
+  env:
+    ANSIBLE_HOME: ${MOLECULE_EPHEMERAL_DIRECTORY}/ansible_home
+    ANSIBLE_COLLECTIONS_PATH: ${MOLECULE_EPHEMERAL_DIRECTORY}/ansible_home/collections:${HOME}/.ansible/collections:/usr/share/ansible/collections
 driver:
   name: default
   options:
     managed: true
 platforms:
-  - name: mcp-gate-instance
+  - name: linux-mcp-gate-instance
 provisioner:
   name: ansible
   inventory:
     hosts:
       molecule:
         hosts:
-          mcp-gate-instance:
+          linux-mcp-gate-instance:
             ansible_connection: containers.podman.podman
             ansible_python_interpreter: /usr/bin/python3
 scenario:

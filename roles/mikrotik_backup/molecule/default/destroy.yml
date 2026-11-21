@@ -5,5 +5,5 @@
   tasks:
     - name: Ensure the test container is absent
       containers.podman.podman_container:
-        name: mikrotik-backup-instance
+        name: linux-mikrotik-backup-instance
         state: absent
