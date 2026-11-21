@@ -1,3 +1,4 @@
 FROM registry.fedoraproject.org/fedora:44
-RUN dnf -y -q install systemd python3 cockpit-ws openssl && dnf clean all
+RUN dnf -y -q install systemd python3 cockpit-ws openssl firewalld python3-firewall \
+    && dnf clean all && systemctl enable firewalld
 CMD ["/sbin/init"]

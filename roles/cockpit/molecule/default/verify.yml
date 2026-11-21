@@ -172,3 +172,75 @@
     - name: Assert no staging (*.new) files were left behind
       ansible.builtin.assert:
         that: cockpit_t_staging_files.files | length == 0
+
+    - name: Read the permanent firewalld rich rules
+      ansible.builtin.command:
+        cmd: firewall-cmd --permanent --list-rich-rules
+      register: cockpit_t_rich_rules
+      changed_when: false
+
+    - name: Read the runtime firewalld rich rules
+      ansible.builtin.command:
+        cmd: firewall-cmd --list-rich-rules
+      register: cockpit_t_rich_rules_runtime
+      changed_when: false
+
+    - name: Assert one 9090 rich rule per allowed CIDR, deprecated var included
+      ansible.builtin.assert:
+        that:
+          - item.stdout_lines | length == 3
+          - >-
+            'rule family="ipv4" source address="192.168.70.0/24" port port="9090"
+            protocol="tcp" accept' in item.stdout_lines
+          - >-
+            'rule family="ipv4" source address="10.10.99.0/24" port port="9090"
+            protocol="tcp" accept' in item.stdout_lines
+          - >-
+            'rule family="ipv6" source address="2001:db8:70::/48" port port="9090"
+            protocol="tcp" accept' in item.stdout_lines
+      loop:
+        - "{{ cockpit_t_rich_rules }}"
+        - "{{ cockpit_t_rich_rules_runtime }}"
+      loop_control:
+        label: "{{ item.cmd | join(' ') }}"
+
+    - name: Query the zone-wide cockpit firewalld service
+      ansible.builtin.command:
+        cmd: "firewall-cmd {{ item }} --query-service=cockpit"
+      loop:
+        - --permanent
+        - ""
+      register: cockpit_t_blanket
+      changed_when: false
+      failed_when: cockpit_t_blanket.rc not in [0, 1]
+
+    - name: Assert the zone-wide cockpit service is disabled (permanent and runtime)
+      ansible.builtin.assert:
+        that: cockpit_t_blanket.results | map(attribute='stdout') | unique == ['no']
+
+    - name: Gather the facts the role needs for the no-allowlist run
+      ansible.builtin.setup:
+        gather_subset: min
+
+    - name: Apply cockpit without an allowlist
+      block:
+        - name: Apply cockpit with no CIDRs
+          ansible.builtin.include_role:
+            name: danmwallace.linux.cockpit
+          vars:
+            cockpit_hostname: cockpit.test.local
+
+        - name: Record that the role ran without an allowlist
+          ansible.builtin.set_fact:
+            cockpit_t_no_cidrs_failed: false
+      rescue:
+        - name: Record the no-allowlist failure
+          ansible.builtin.set_fact:
+            cockpit_t_no_cidrs_failed: true
+            cockpit_t_no_cidrs_msg: "{{ ansible_failed_result.msg }}"
+
+    - name: Assert the role refuses to run with no CIDRs
+      ansible.builtin.assert:
+        that:
+          - cockpit_t_no_cidrs_failed
+          - "'cockpit_allowed_cidrs is empty' in cockpit_t_no_cidrs_msg"

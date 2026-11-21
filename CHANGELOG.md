@@ -7,6 +7,26 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Changed
+
+- `cockpit`: `cockpit_allowed_cidrs` now scopes TCP 9090 on both backends: one firewalld
+  rich rule per CIDR (RedHat family; `family=ipv6` for IPv6 CIDRs) or one UFW allow rule
+  per CIDR (Ubuntu). **Breaking:** with no CIDRs the role now fails before changing
+  anything, on Ubuntu and RedHat-family hosts, instead of opening 9090 to `10.0.0.0/8`
+  (UFW) or leaving firewalld's zone-wide `cockpit` service open to every source (#21, #23).
+- `cockpit`: on Ubuntu, the `9090/tcp ALLOW 10.0.0.0/8` UFW rule the old default created is
+  removed unless `10.0.0.0/8` is in the allowlist.
+
+### Added
+
+- `cockpit_manage_firewall` (default `true`): set `false` to skip the allowlist check and
+  every firewall task when something else scopes 9090.
+
+### Deprecated
+
+- `cockpit_allowed_cidr` (singular): no longer defaults to `10.0.0.0/8`. If set, it is
+  appended to `cockpit_allowed_cidrs` and a deprecation notice is printed.
+
 ## [1.12.0] - 2026-11-16
 
 ### Added
