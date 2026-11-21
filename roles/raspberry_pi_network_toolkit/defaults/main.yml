@@ -39,8 +39,10 @@ portainer_version: '2.45.4'
 # Review https://github.com/louislam/uptime-kuma/wiki before upgrading existing installs.
 uptime_kuma_version: '2.5.12'
 netdata_version: 'v2.13.0'
-# NOTE: tags from 0.4 onward carry a "v" prefix. v0.5.0 is the last versioned
-# tag: from v0.6.0 upstream publishes only the floating lts / latest / 3.4 tags.
-# v0.5.0 publishes arm64 and arm/v7; verify the image manifest for your
-# specific Raspberry Pi model before deploying.
-portainer_socket_proxy_version: "v0.5.0"
+# Upstream stopped publishing versioned tags at v0.6.0 and now rebuilds the
+# floating lts / latest / 3.4 tags weekly, so pin the 3.4 tag to the digest
+# of its multi-arch image index (not one platform's manifest). Docker then
+# picks the arm64 or arm/v7 image itself, whereas a single-platform digest
+# forces one architecture on every Pi. Update the tag and digest together.
+# renovate: datasource=docker depName=ghcr.io/tecnativa/docker-socket-proxy
+portainer_socket_proxy_version: "3.4@sha256:027f9fa5ee70be5836eeaa10ce889d7a83f34a8db16a7f412818b92997e0beab"

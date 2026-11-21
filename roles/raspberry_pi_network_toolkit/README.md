@@ -33,6 +33,7 @@ Defaults are defined in `defaults/main.yml`.
 | `install_docker` | `true` | Install and configure Docker engine + compose plugin |
 | `install_gui_tools` | `false` | Reserved toggle for GUI tools (currently not used in tasks) |
 | `docker_compose_version` | `v5.8.0` | Reserved compose version variable (currently not used in tasks) |
+| `portainer_socket_proxy_version` | `3.4@sha256:027f9fa5…` | docker-socket-proxy tag plus multi-arch index digest; see Notes |
 | `enable_monitoring` | `true` | Deploy monitoring stack with Docker Compose |
 | `monitoring_ports.portainer` | `9000` | Portainer host port |
 | `monitoring_ports.netdata` | `19999` | Netdata host port |
@@ -77,3 +78,11 @@ No Ansible role dependencies are declared in `meta/main.yml`.
   and can't be rolled back afterwards. Back up the `portainer_data` and
   `uptime-kuma` volumes before raising `portainer_version` or
   `uptime_kuma_version` on an existing install.
+- docker-socket-proxy publishes no versioned tags after v0.6.0, only the
+  weekly-rebuilt `lts`, `latest` and `3.4`. `portainer_socket_proxy_version`
+  pins `3.4` to the digest of its multi-arch image index
+  (`3.4@sha256:<digest>`), so the image never changes under you and Docker
+  still picks the arm64 or arm/v7 build. To update, take the index digest,
+  not a per-platform one:
+  `skopeo inspect --raw docker://ghcr.io/tecnativa/docker-socket-proxy:3.4 | sha256sum`
+  (or `docker buildx imagetools inspect ghcr.io/tecnativa/docker-socket-proxy:3.4`).

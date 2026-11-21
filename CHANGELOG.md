@@ -23,9 +23,12 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
     the one-time setup token from its log to create the first administrator.
   - `netdata_version` v2.5.3 → v2.13.0.
   - `uptime_kuma_version` 2.4.0 → 2.5.12.
-  - `portainer_socket_proxy_version` "0.4.2" → "v0.5.0". The old value named
-    a tag that doesn't exist on ghcr.io (tags are `v`-prefixed from 0.4), so
-    a fresh deploy failed to pull. v0.5.0 is upstream's last versioned tag.
+  - `portainer_socket_proxy_version` "0.4.2" → "3.4@sha256:027f9fa5…". The
+    old value named a tag that doesn't exist on ghcr.io, so a fresh deploy
+    failed to pull. Upstream publishes no versioned tags after v0.6.0, so the
+    floating `3.4` tag is now pinned to its multi-arch image index digest
+    (amd64, arm64, arm/v7). Entrypoint, HAProxy config, port and environment
+    variables are unchanged from v0.5.0, whose additions over 0.4.2 are opt-in.
   - `docker_compose_version` v5.5.0 → v5.8.0 (informational; the role
     installs the distribution's `docker-compose-plugin`).
   - The compose template no longer carries its own fallback pins; it uses the
