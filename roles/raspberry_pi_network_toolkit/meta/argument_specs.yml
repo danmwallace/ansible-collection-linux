@@ -48,7 +48,19 @@ argument_specs:
             not currently consume this value.
         type: str
         required: false
-        default: "v5.5.0"
+        default: "v5.8.0"
+      portainer_socket_proxy_version:
+        description:
+          - Image reference suffix for C(ghcr.io/tecnativa/docker-socket-proxy),
+            rendered as C(<registry>/tecnativa/docker-socket-proxy:<value>).
+          - Holds the floating C(3.4) tag pinned to the digest of its multi-arch
+            image index (C(3.4@sha256:...)), because upstream publishes no
+            versioned tags after v0.6.0. The index digest lets Docker select the
+            arm64 or arm/v7 image; a single-platform digest would not.
+          - A plain tag (for example C(3.4)) also works but is not reproducible.
+        type: str
+        required: false
+        default: "3.4@sha256:027f9fa5ee70be5836eeaa10ce889d7a83f34a8db16a7f412818b92997e0beab"
       enable_monitoring:
         description:
           - Whether to deploy the monitoring container stack. Combined with
