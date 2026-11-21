@@ -2,3 +2,10 @@
 # SPDX-License-Identifier: MIT
 # Devices whose SFTP check ran and failed (evaluated lazily, after the check task registers).
 _mikrotik_backup_unreachable: "{{ _mikrotik_backup_sftp_check.results | default([]) | selectattr('rc', 'defined') | rejectattr('rc', 'eq', 0) | list }}"
+# Binaries the role and its pull script call, checked when
+# mikrotik_backup_install_packages is false; package is named in the error.
+_mikrotik_backup_required_binaries:
+  - bin: sftp
+    package: openssh-clients
+  - bin: ssh
+    package: openssh-clients

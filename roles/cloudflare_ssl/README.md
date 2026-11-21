@@ -15,7 +15,10 @@ Supports Ubuntu/Debian (apt) and Fedora Server (dnf).
 ## Requirements
 
 - Ansible >= 2.16 (collection `requires_ansible`)
-- Target host: Ubuntu/Debian or Fedora Server
+- Target host: Ubuntu/Debian or Fedora Server. On an image-based host (bootc,
+  rpm-ostree) the role installs nothing (`cloudflare_ssl_install_packages`
+  defaults to `false` there) and the **OS image must provide** `certbot` and
+  the Cloudflare DNS plugin; see [Notes](#notes).
 - A domain managed in Cloudflare, plus a Cloudflare API token scoped to **DNS
   edit** for that zone
 - Outbound network access to Let's Encrypt and the Cloudflare API
@@ -35,6 +38,7 @@ name (`cloudflare_ssl_*`) per the workspace convention.
 | `cloudflare_ssl_api_token` | str | yes | _(none)_ | Cloudflare API token with DNS edit scope; written into `cloudflare.ini`. **Supply from vault.** |
 | `cloudflare_ssl_domains` | list | no | `["{{ inventory_hostname }}"]` | Names requested in the certificate. The **first entry** names the lineage (passed as `--cert-name`), so the certificate lands in `/etc/letsencrypt/live/<first entry>/`. |
 | `cloudflare_ssl_manage_renewal_timer` | bool | no | `true` | Enable and start the packaged certbot renewal timer (`certbot-renew.timer` on RedHat-family, `certbot.timer` on Debian-family). Leave `true` unless another mechanism owns renewal. |
+| `cloudflare_ssl_install_packages` | bool | no | `false` on image-based hosts (`ansible_facts.pkg_mgr == 'atomic_container'`), else `true` | Install the certbot packages with the `package` module. When `false`, the role only checks that `certbot` is on the `PATH` and fails naming it if not. |
 | `cloudflare_ssl_debian_packages` | list | no | `[certbot, python3-certbot-dns-cloudflare]` | Apt packages installed on Ubuntu/Debian. |
 | `cloudflare_ssl_fedora_packages` | list | no | `[certbot, python3-certbot-dns-cloudflare]` | Dnf packages installed on Fedora. |
 
@@ -70,7 +74,9 @@ vault_cloudflare_ssl_api_token: "your-cloudflare-dns-edit-token"
 1. Asserts `cloudflare_ssl_email`, `cloudflare_ssl_api_token` and
    `cloudflare_ssl_domains` are all set.
 2. Installs `certbot` and the Cloudflare DNS plugin — apt on Ubuntu/Debian,
-   dnf on Fedora.
+   dnf on Fedora. With `cloudflare_ssl_install_packages: false` (the default
+   on image-based hosts) it installs nothing and instead fails unless
+   `certbot` is on the `PATH`.
 3. Creates `/root/.secrets` (mode `0700`).
 4. Renders `cloudflare.ini.j2` to `/root/.secrets/cloudflare.ini` (mode
    `0400`) containing the API token.
@@ -85,6 +91,17 @@ vault_cloudflare_ssl_api_token: "your-cloudflare-dns-edit-token"
 
 ## Notes
 
+- **Image-based hosts (bootc, rpm-ostree).** There `ansible_facts.pkg_mgr` is
+  `atomic_container`, and the `package` module dispatches to
+  `community.general.atomic_container`, which was removed in community.general
+  13.0.0, so the install tasks would fail outright. Forcing
+  `ansible_package_use: dnf5` doesn't help: `/usr` is read-only. So
+  `cloudflare_ssl_install_packages` defaults to `false` on those hosts and
+  **the image must provide** `certbot` and `python3-certbot-dns-cloudflare`.
+  The role checks only for the `certbot` binary; a missing DNS plugin shows up
+  as certbot's own "plugin does not appear to be installed" error at
+  issuance. The default reads `ansible_facts.pkg_mgr`, so the play needs facts
+  gathered (or set the variable explicitly).
 - **On Fedora the renewal timer ships in the `certbot` package, not
   `python3-certbot`.** Installing only `python3-certbot` gives you the
   library and a `certbot-3` binary with no timer unit at all — the

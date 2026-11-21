@@ -20,7 +20,10 @@ service exit non-zero.
 
 - Ansible >= 2.16
 - A Fedora (or other RHEL-family) target with systemd; the role installs
-  `openssh-clients` via the `package` module
+  `openssh-clients` via the `package` module. On an image-based host (bootc,
+  rpm-ostree) it installs nothing (`mikrotik_backup_install_packages`
+  defaults to `false` there) and the **OS image must provide** `sftp` and
+  `ssh`; see [Notes](#notes).
 - SSH reachability from the target to each device (firewall and
   `/ip service set ssh address=...` must allow it)
 - On each RouterOS device, a read-only backup account that authorises this
@@ -39,6 +42,7 @@ service exit non-zero.
 | `mikrotik_backup_dir` | str | no | `/var/lib/mikrotik-backup` | Local directory receiving one subdirectory per device. Add it to `restic_backup_paths`. |
 | `mikrotik_backup_retention_days` | int | no | `14` | Local copies older than this many days are deleted, per device, after that device's pull succeeds. |
 | `mikrotik_backup_allow_previous_day` | bool | no | `false` | When today's pair is missing or incomplete, accept yesterday's pair instead of failing the device. |
+| `mikrotik_backup_install_packages` | bool | no | `false` on image-based hosts (`ansible_facts.pkg_mgr == 'atomic_container'`), else `true` | Install `openssh-clients` with the `package` module. When `false`, the role only checks that `sftp` and `ssh` are on the `PATH` and fails naming any that are missing. |
 | `mikrotik_backup_ssh_key_path` | str | no | `/etc/mikrotik-backup/id_ed25519` | Private key path for the dedicated SSH identity. The public key is written next to it with a `.pub` suffix. |
 | `mikrotik_backup_verify_connectivity` | bool | no | `true` | During the role run, open an SFTP session to every device and fail with the public key to authorise if any cannot be reached. |
 | `mikrotik_backup_device_timezone` | str | no | `America/New_York` | IANA timezone the devices stamp file names in. "Today" is computed in this zone, so a UTC host still fetches the right pair. Must exist under `/usr/share/zoneinfo`. |
@@ -86,7 +90,10 @@ restic_backup_paths:
 1. Asserts `mikrotik_backup_devices` is non-empty, has unique names, uses only
    safe characters in `name`, `identity` and `remote_dir`, and that every
    `host_key` looks like `"<type> <base64>"`.
-2. Installs `openssh-clients` (for `sftp`).
+2. Installs `openssh-clients` (for `sftp`). With
+   `mikrotik_backup_install_packages: false` (the default on image-based
+   hosts) it installs nothing and instead fails unless `sftp` and `ssh` are on
+   the `PATH`.
 3. Creates `/etc/mikrotik-backup`, the key directory,
    `/usr/local/libexec/mikrotik-backup` and `mikrotik_backup_dir` (mode
    `0700`), then one `0700` subdirectory per device.
@@ -162,6 +169,16 @@ collecting the key.
 
 ## Notes
 
+- **Image-based hosts (bootc, rpm-ostree).** There `ansible_facts.pkg_mgr` is
+  `atomic_container`, and the `package` module dispatches to
+  `community.general.atomic_container`, which was removed in community.general
+  13.0.0, so the install task would fail outright. Forcing
+  `ansible_package_use: dnf5` doesn't help: `/usr` is read-only. So
+  `mikrotik_backup_install_packages` defaults to `false` on those hosts and
+  **the image must provide** `sftp` and `ssh` (package `openssh-clients`). The
+  role fails early naming any that are missing. The default reads
+  `ansible_facts.pkg_mgr`, so the play needs facts gathered (or set the
+  variable explicitly).
 - **Timezones and timer ordering.** Devices stamp files with their own local
   date (00:30 device time by default). This role computes "today" in
   `mikrotik_backup_device_timezone` and schedules the pull in that zone

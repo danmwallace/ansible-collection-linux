@@ -39,6 +39,15 @@ argument_specs:
         type: bool
         required: false
         default: true
+      cloudflare_ssl_install_packages:
+        description:
+          - Install certbot and the Cloudflare DNS plugin with the package module.
+          - Defaults to false on image-based hosts (bootc, rpm-ostree), where ansible_facts.pkg_mgr is
+            atomic_container and the package module cannot install anything. The role then only checks
+            that certbot is on the PATH and fails naming what the image lacks.
+        type: bool
+        required: false
+        default: "{{ ansible_facts.pkg_mgr != 'atomic_container' }}"
       cloudflare_ssl_debian_packages:
         description: Packages installed via apt on Ubuntu/Debian to provide certbot and the Cloudflare DNS plugin.
         type: list

@@ -21,6 +21,12 @@ mikrotik_backup_retention_days: 14
 # Accept yesterday's pair when today's is missing (the run still logs today's miss)
 mikrotik_backup_allow_previous_day: false
 
+# Install the SFTP client (openssh-clients) with the package module.
+# Off by default on image-based hosts (bootc, rpm-ostree: pkg_mgr is
+# atomic_container), where the package module cannot install anything; the role
+# then only checks that the OS image provides the binaries it needs.
+mikrotik_backup_install_packages: "{{ ansible_facts.pkg_mgr != 'atomic_container' }}"
+
 # SSH identity
 mikrotik_backup_ssh_key_path: /etc/mikrotik-backup/id_ed25519
 # Test SFTP access to every device during the role run and fail with the key to authorise
