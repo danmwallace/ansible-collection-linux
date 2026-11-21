@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":dependencyDashboard"
+  ],
+  "timezone": "UTC",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "dependencyDashboardApproval": false,
+  "automerge": false,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Role defaults annotated with '# renovate: datasource=<ds> depName=<name> [packageName=<pkg>] [versioning=<v>] [extractVersion=<re>]' on the line above the pin; also catches tag@sha256 digest pins",
+      "managerFilePatterns": [
+        "/^roles/[^/]+/defaults/main\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+packageName=(?<packageName>\\S+))?(?:\\s+versioning=(?<versioning>\\S+))?(?:\\s+extractVersion=(?<extractVersion>\\S+))?\\s*\\n[A-Za-z0-9_]+:\\s*[\"']?(?<currentValue>[^\\s\"'@#]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?[\"']?"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Full image refs in role defaults (<role>_..._image: registry/name:tag[@sha256:...])",
+      "managerFilePatterns": [
+        "/^roles/[^/]+/defaults/main\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "\\b[A-Za-z0-9_]+_image:\\s*[\"']?(?<depName>[a-z0-9][a-z0-9._/-]*):(?<currentValue>[A-Za-z0-9][A-Za-z0-9._-]*)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?[\"']?\\s"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Images with a hardcoded tag in role templates (compose 'image:' and Quadlet 'Image='); templated tags like {{ foo_version }} are left to the defaults managers",
+      "managerFilePatterns": [
+        "/^roles/[^/]+/templates/.+\\.j2$/"
+      ],
+      "matchStrings": [
+        "(?:image:|Image=)\\s*[\"']?(?<depName>[a-z0-9][a-z0-9._/-]*):(?<currentValue>[A-Za-z0-9][A-Za-z0-9._-]*)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "One PR per role for minor/patch/digest bumps. Majors are not matched here, so separateMajorMinor gives each its own PR",
+      "matchFileNames": [
+        "roles/**"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "{{{replace '^roles/([^/]+)/.*$' '$1' packageFile}}} minor and patch"
+    },
+    {
+      "description": "Majors stay ungrouped and unautomerged, one PR per role and dependency, so e.g. a postgres major in two roles is reviewed (and migrated) per role",
+      "matchFileNames": [
+        "roles/**"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "additionalBranchPrefix": "{{{replace '^roles/([^/]+)/.*$' '$1-' packageFile}}}",
+      "commitMessageSuffix": "({{{replace '^roles/([^/]+)/.*$' '$1' packageFile}}})",
+      "automerge": false
+    },
+    {
+      "description": "Molecule test images (e.g. the Fedora base in molecule Containerfiles) move together in one PR, not one per role; majors still get their own PR",
+      "matchFileNames": [
+        "roles/*/molecule/**"
+      ],
+      "groupName": "molecule test images",
+      "additionalBranchPrefix": "",
+      "commitMessageSuffix": ""
+    }
+  ]
+}

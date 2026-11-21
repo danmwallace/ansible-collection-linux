@@ -11,6 +11,7 @@ install_docker: true
 install_gui_tools: false
 
 # Docker Compose version to install
+# renovate: datasource=github-releases depName=docker/compose
 docker_compose_version: "v5.8.0"
 
 # Whether to deploy monitoring containers
@@ -34,10 +35,13 @@ uptime_kuma_hostname: "uptime.example.com"
 # Container image versions
 # NOTE: Portainer migrates its database on start and cannot be downgraded
 # afterwards; back up the portainer_data volume before changing this.
+# renovate: datasource=docker depName=portainer/portainer-ce
 portainer_version: '2.45.4'
 # NOTE: uptime-kuma 2.x is a major version bump from 1.x and requires a data migration.
 # Review https://github.com/louislam/uptime-kuma/wiki before upgrading existing installs.
+# renovate: datasource=docker depName=louislam/uptime-kuma
 uptime_kuma_version: '2.5.12'
+# renovate: datasource=docker depName=netdata/netdata
 netdata_version: 'v2.13.0'
 # Upstream stopped publishing versioned tags at v0.6.0 and now rebuilds the
 # floating lts / latest / 3.4 tags weekly, so pin the 3.4 tag to the digest
