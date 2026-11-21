@@ -5,5 +5,5 @@
   tasks:
     - name: Ensure the test container is absent
       containers.podman.podman_container:
-        name: cloudflare-ssl-instance
+        name: linux-cloudflare-ssl-instance
         state: absent

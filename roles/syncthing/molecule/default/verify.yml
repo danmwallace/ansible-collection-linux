@@ -30,7 +30,7 @@
           assert hub in [x["deviceID"] for x in f["devices"]] and f["rescanIntervalS"] > 0 and f["fsWatcherEnabled"], f
           o = L("config/options")
           assert o["globalAnnounceEnabled"] is False and o["relaysEnabled"] is False, o
-          assert H(f"config/devices/{dev}")["name"] == "syncthing-instance"
+          assert H(f"config/devices/{dev}")["name"] == "linux-syncthing-instance"
           f = H("config/folders/syncthing")
           assert f["path"] == "/home/nas/Syncthing" and dev in [x["deviceID"] for x in f["devices"]], f
           assert f["rescanIntervalS"] > 0, f

@@ -13,7 +13,7 @@
 
     - name: Ensure the systemd test container is running
       containers.podman.podman_container:
-        name: cockpit-instance
+        name: linux-cockpit-instance
         image: localhost/cockpit-molecule
         systemd: always
         # firewalld needs these in the (rootless) container's own netns.

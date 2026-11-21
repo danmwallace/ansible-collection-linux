@@ -1,0 +1,22 @@
+---
+# Collection under test for every roles/*/molecule/*/ scenario, installed by
+# the molecule dependency step into the scenario's ephemeral directory.
+#
+# Why: molecule 26 builds its ansible-compat Runtime with isolated=False from
+# the calling shell's environment before it reads molecule.yml, so its
+# "prerun" step installs the collection under test into
+# $ANSIBLE_HOME/collections of that shell (default ~/.ansible/collections),
+# overwriting the owner's installed copy. Nothing in molecule.yml can redirect
+# that, so each scenario sets `prerun: false`, installs this file into
+# ${MOLECULE_EPHEMERAL_DIRECTORY}/ansible_home/collections, and points
+# ANSIBLE_HOME / ANSIBLE_COLLECTIONS_PATH there.
+#
+# The settings live in each molecule.yml rather than a shared
+# .config/molecule/config.yml: molecule only finds that file when .git is a
+# directory, so it is silently skipped in git worktrees.
+#
+# ansible-galaxy resolves a relative "dir" source against its working
+# directory, which molecule sets to roles/<role>/, so ../.. is the repo root.
+collections:
+  - name: ../..
+    type: dir
