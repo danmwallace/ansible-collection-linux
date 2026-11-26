@@ -1,0 +1,264 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  vars:
+    raspberry_pi_network_toolkit_t_compose: /opt/docker-compose/docker-compose.yml
+    raspberry_pi_network_toolkit_t_hostnames:
+      portainer_hostname: portainer.test.local
+      netdata_hostname: netdata.test.local
+      uptime_kuma_hostname: uptime.test.local
+  tasks:
+    # --- rendered compose file (default: Portainer on the socket) ----------
+    - name: Read the rendered compose file
+      ansible.builtin.slurp:
+        src: "{{ raspberry_pi_network_toolkit_t_compose }}"
+      register: raspberry_pi_network_toolkit_t_compose_raw
+
+    - name: Parse the rendered compose file
+      ansible.builtin.set_fact:
+        raspberry_pi_network_toolkit_t_spec: "{{ raspberry_pi_network_toolkit_t_compose_raw.content | b64decode | from_yaml }}"
+
+    - name: Assert Portainer has the read-write socket and Netdata uses the read-only proxy
+      vars:
+        svc: "{{ raspberry_pi_network_toolkit_t_spec.services }}"
+      ansible.builtin.assert:
+        that:
+          - "'/var/run/docker.sock:/var/run/docker.sock' in svc.portainer.volumes"
+          - "'environment' not in svc.portainer"
+          - "'command' not in svc.portainer"
+          - "'socket_proxy_net' not in svc.portainer.networks"
+          - svc.portainer.image == 'portainer/portainer-ce:2.39.9'
+          - svc.netdata.environment.DOCKER_HOST == 'tcp://socket-proxy:2375'
+          - svc.netdata.volumes | select('search', 'docker.sock') | list | length == 0
+          - "'socket_proxy_net' in svc.netdata.networks"
+          - svc.netdata.image == 'netdata/netdata:v2.13.0'
+          - svc['uptime-kuma'].image == 'louislam/uptime-kuma:2.5.12'
+          - "'POST=0' in svc['socket-proxy'].environment"
+          - "'/var/run/docker.sock:/var/run/docker.sock:ro' in svc['socket-proxy'].volumes"
+          - svc['socket-proxy'].image is search('docker-socket-proxy:3\\.4@sha256:[0-9a-f]{64}$')
+          - raspberry_pi_network_toolkit_t_spec.networks.socket_proxy_net.internal
+        fail_msg: "{{ raspberry_pi_network_toolkit_t_compose_raw.content | b64decode }}"
+
+    - name: Wait for the four containers to be running
+      ansible.builtin.command:
+        cmd: docker ps --filter status=running --format '{{ "{{" }}.Names{{ "}}" }}'
+      register: raspberry_pi_network_toolkit_t_running
+      changed_when: false
+      until: >-
+        ['toolkit-socket-proxy', 'portainer', 'netdata', 'uptime-kuma']
+        | difference(raspberry_pi_network_toolkit_t_running.stdout_lines) | length == 0
+      retries: 30
+      delay: 2
+
+    # --- the socket proxy itself -------------------------------------------
+    - name: Call the proxy from Netdata's network with a read and a write
+      ansible.builtin.command:
+        cmd: >-
+          docker exec netdata curl -s -o /dev/null -w '%{http_code}'
+          {{ item.flags }} http://socket-proxy:2375{{ item.path }}
+      loop:
+        - flags: ""
+          path: /containers/json
+        - flags: -X POST
+          path: /containers/uptime-kuma/restart
+      register: raspberry_pi_network_toolkit_t_proxy
+      changed_when: false
+
+    - name: Assert the proxy allows reads and refuses writes
+      ansible.builtin.assert:
+        that:
+          - raspberry_pi_network_toolkit_t_proxy.results[0].stdout == '200'
+          - raspberry_pi_network_toolkit_t_proxy.results[1].stdout == '403'
+
+    # --- Netdata container metrics through the proxy ------------------------
+    # cgroup_<name> charts only get the container's name if Netdata resolved
+    # the cgroup through the Docker API, which here is the proxy.
+    - name: Wait for Netdata to chart containers by name
+      ansible.builtin.command:
+        cmd: docker exec netdata curl -sf http://localhost:19999/api/v1/charts
+      register: raspberry_pi_network_toolkit_t_charts
+      changed_when: false
+      until: >-
+        raspberry_pi_network_toolkit_t_charts.rc == 0 and
+        (raspberry_pi_network_toolkit_t_charts.stdout | from_json).charts.keys()
+        | select('match', '^cgroup_(uptime-kuma|portainer)\.cpu$') | list | length == 2
+      retries: 30
+      delay: 5
+
+    - name: Assert Netdata's Docker collector reaches the API through the proxy
+      ansible.builtin.assert:
+        that:
+          - (raspberry_pi_network_toolkit_t_charts.stdout | from_json).charts.keys() | select('match', '^docker_local\.') | list | length > 0
+
+    # --- Portainer writes through the socket --------------------------------
+    - name: Open a Portainer API session
+      ansible.builtin.include_tasks: tasks/portainer_session.yml
+
+    - name: Create a local-socket environment in Portainer
+      ansible.builtin.uri:
+        url: "{{ raspberry_pi_network_toolkit_t_api }}/endpoints"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+        body_format: form-multipart
+        body:
+          Name: local
+          EndpointCreationType: "1"
+      register: raspberry_pi_network_toolkit_t_endpoint
+
+    - name: Run a throwaway container through Portainer's Docker API
+      vars:
+        docker_api: "{{ raspberry_pi_network_toolkit_t_api }}/endpoints/{{ raspberry_pi_network_toolkit_t_endpoint.json.Id }}/docker"
+      block:
+        - name: Pull hello-world through Portainer
+          ansible.builtin.uri:
+            url: "{{ docker_api }}/images/create?fromImage=hello-world&tag=latest"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+            timeout: 120
+
+        - name: Create the throwaway container through Portainer
+          ansible.builtin.uri:
+            url: "{{ docker_api }}/containers/create?name=molecule-portainer-write"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+            body_format: json
+            body:
+              Image: hello-world:latest
+            status_code: 201
+          register: raspberry_pi_network_toolkit_t_created
+
+        - name: Start the throwaway container through Portainer
+          ansible.builtin.uri:
+            url: "{{ docker_api }}/containers/{{ raspberry_pi_network_toolkit_t_created.json.Id }}/start"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+            status_code: 204
+
+        - name: Wait for the throwaway container to exit
+          ansible.builtin.uri:
+            url: "{{ docker_api }}/containers/{{ raspberry_pi_network_toolkit_t_created.json.Id }}/wait"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+          register: raspberry_pi_network_toolkit_t_wait
+
+        - name: Remove the throwaway container through Portainer
+          ansible.builtin.uri:
+            url: "{{ docker_api }}/containers/{{ raspberry_pi_network_toolkit_t_created.json.Id }}?force=true"
+            method: DELETE
+            headers:
+              Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+            status_code: 204
+
+    - name: Assert the throwaway container ran to completion
+      ansible.builtin.assert:
+        that: raspberry_pi_network_toolkit_t_wait.json.StatusCode == 0
+
+    # --- testssl.sh ----------------------------------------------------------
+    - name: Describe the testssl.sh checkout
+      ansible.builtin.command:  # noqa command-instead-of-module  # read-only queries
+        cmd: git -C /opt/testssl.sh {{ item }}
+      loop:
+        - describe --tags --exact-match
+        - remote get-url origin
+      register: raspberry_pi_network_toolkit_t_testssl_git
+      changed_when: false
+
+    - name: Run testssl --version
+      ansible.builtin.command:
+        cmd: /usr/local/bin/testssl --version
+      register: raspberry_pi_network_toolkit_t_testssl
+      changed_when: false
+
+    - name: Assert testssl.sh moved from 3.3dev to the release tag and runs
+      ansible.builtin.assert:
+        that:
+          - raspberry_pi_network_toolkit_t_testssl_git.results[0].stdout == 'v3.2.5'
+          - raspberry_pi_network_toolkit_t_testssl_git.results[1].stdout == 'https://github.com/testssl/testssl.sh.git'
+          - raspberry_pi_network_toolkit_t_testssl.stdout is search('testssl\S* version \S*3\.2\.5')
+        fail_msg: "{{ raspberry_pi_network_toolkit_t_testssl.stdout }}"
+
+    # --- proxy mode: Portainer read-only -------------------------------------
+    # -H only seeds the environment of a fresh instance, so start from an
+    # empty portainer_data volume.
+    - name: Remove Portainer and its data volume
+      ansible.builtin.shell:
+        cmd: docker rm -f portainer && docker volume rm docker-compose_portainer_data
+      changed_when: true
+
+    - name: Redeploy the stack with Portainer behind the read-only proxy
+      ansible.builtin.include_role:
+        name: danmwallace.linux.raspberry_pi_network_toolkit
+        tasks_from: docker_containers.yml
+      vars:
+        toolkit_user: pi
+        portainer_hostname: "{{ raspberry_pi_network_toolkit_t_hostnames.portainer_hostname }}"
+        netdata_hostname: "{{ raspberry_pi_network_toolkit_t_hostnames.netdata_hostname }}"
+        uptime_kuma_hostname: "{{ raspberry_pi_network_toolkit_t_hostnames.uptime_kuma_hostname }}"
+        raspberry_pi_network_toolkit_portainer_docker_access: proxy
+
+    - name: Inspect the proxy-mode Portainer container
+      ansible.builtin.command:
+        cmd: docker inspect portainer
+      register: raspberry_pi_network_toolkit_t_proxy_portainer
+      changed_when: false
+
+    - name: Assert proxy-mode Portainer has no socket and points -H at the proxy
+      vars:
+        ctr: "{{ (raspberry_pi_network_toolkit_t_proxy_portainer.stdout | from_json)[0] }}"
+      ansible.builtin.assert:
+        that:
+          - ctr.Mounts | selectattr('Destination', 'equalto', '/var/run/docker.sock') | list | length == 0
+          - ctr.Args == ['-H', 'tcp://socket-proxy:2375']
+          - "'docker-compose_socket_proxy_net' in ctr.NetworkSettings.Networks"
+
+    - name: Open a Portainer API session on the fresh instance
+      ansible.builtin.include_tasks: tasks/portainer_session.yml
+
+    - name: Wait for Portainer to create the environment from -H
+      ansible.builtin.uri:
+        url: "{{ raspberry_pi_network_toolkit_t_api }}/endpoints"
+        headers:
+          Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+      register: raspberry_pi_network_toolkit_t_proxy_endpoints
+      until: raspberry_pi_network_toolkit_t_proxy_endpoints.json | length > 0
+      retries: 15
+      delay: 2
+
+    - name: List and create containers through proxy-mode Portainer
+      vars:
+        docker_api: "{{ raspberry_pi_network_toolkit_t_api }}/endpoints/{{ raspberry_pi_network_toolkit_t_proxy_endpoints.json[0].Id }}/docker"
+      ansible.builtin.uri:
+        url: "{{ docker_api }}{{ item.path }}"
+        method: "{{ item.method }}"
+        headers:
+          Authorization: "Bearer {{ raspberry_pi_network_toolkit_t_jwt }}"
+        body_format: json
+        body: "{{ item.body }}"
+        status_code: [200, 201, 403, 500]
+      loop:
+        - method: GET
+          path: /containers/json
+          body: {}
+        - method: POST
+          path: /containers/create?name=molecule-proxy-write
+          body:
+            Image: hello-world:latest
+      register: raspberry_pi_network_toolkit_t_proxy_calls
+
+    - name: Assert proxy-mode Portainer can read but not write
+      ansible.builtin.assert:
+        that:
+          - raspberry_pi_network_toolkit_t_proxy_endpoints.json[0].URL == 'tcp://socket-proxy:2375'
+          - raspberry_pi_network_toolkit_t_proxy_calls.results[0].status == 200
+          - raspberry_pi_network_toolkit_t_proxy_calls.results[0].json | length >= 4
+          - raspberry_pi_network_toolkit_t_proxy_calls.results[1].status == 403
+        fail_msg: >-
+          {{ raspberry_pi_network_toolkit_t_proxy_endpoints.json[0].URL }}
+          {{ raspberry_pi_network_toolkit_t_proxy_calls.results | map(attribute='status') | map('string') | join(' ') }}
+          {{ raspberry_pi_network_toolkit_t_proxy_calls.results[1].json | default('') | string }}

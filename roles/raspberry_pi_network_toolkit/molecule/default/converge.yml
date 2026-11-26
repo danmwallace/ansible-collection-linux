@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    - name: Apply raspberry_pi_network_toolkit with test values
+      ansible.builtin.include_role:
+        name: danmwallace.linux.raspberry_pi_network_toolkit
+      vars:
+        toolkit_user: pi
+        portainer_hostname: portainer.test.local
+        netdata_hostname: netdata.test.local
+        uptime_kuma_hostname: uptime.test.local

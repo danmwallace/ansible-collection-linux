@@ -1,0 +1,15 @@
+---
+- name: Create
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    # Privileged so tailscaled can open /dev/net/tun and the role can write the
+    # forwarding sysctls in the container's network namespace.
+    - name: Ensure the systemd test container is running
+      containers.podman.podman_container:
+        name: linux-tailscale-instance
+        image: docker.io/jrei/systemd-ubuntu:noble
+        privileged: true
+        systemd: always
+        state: started
+        command: /sbin/init

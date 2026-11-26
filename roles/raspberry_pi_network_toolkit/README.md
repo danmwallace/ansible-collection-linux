@@ -33,6 +33,8 @@ Defaults are defined in `defaults/main.yml`.
 | `install_docker` | `true` | Install and configure Docker engine + compose plugin |
 | `install_gui_tools` | `false` | Reserved toggle for GUI tools (currently not used in tasks) |
 | `docker_compose_version` | `v5.8.0` | Reserved compose version variable (currently not used in tasks) |
+| `raspberry_pi_network_toolkit_portainer_docker_access` | `socket` | `socket` (read-write Docker socket) or `proxy` (read-only socket proxy); see Notes |
+| `raspberry_pi_network_toolkit_testssl_version` | `v3.2.5` | testssl.sh release tag checked out in `/opt/testssl.sh` |
 | `portainer_socket_proxy_version` | `3.4@sha256:027f9fa5…` | docker-socket-proxy tag plus multi-arch index digest; see Notes |
 | `enable_monitoring` | `true` | Deploy monitoring stack with Docker Compose |
 | `monitoring_ports.portainer` | `9000` | Portainer host port |
@@ -72,7 +74,32 @@ No Ansible role dependencies are declared in `meta/main.yml`.
 - Docker monitoring services are only deployed when both `install_docker` and `enable_monitoring` are `true`.
 - The role creates an external Docker network named `proxy_network`.
 - `testssl.sh` is installed to `/opt/testssl.sh` and linked at `/usr/local/bin/testssl`.
-- Portainer (since 2.43) needs a one-time setup token to create the first
+  The checkout is forced to `raspberry_pi_network_toolkit_testssl_version`: a clone on
+  another branch (for example `3.3dev`) is moved to the tag and local edits are discarded.
+- Docker API access. A `socket-proxy` container
+  (`ghcr.io/tecnativa/docker-socket-proxy`) exposes a read-only Docker API
+  (`POST=0`) on an internal network. Netdata always uses it.
+  `raspberry_pi_network_toolkit_portainer_docker_access` picks Portainer's path:
+
+  | Mode | Portainer can | Trade-off |
+  |---|---|---|
+  | `socket` (default) | Everything: start/stop, deploy stacks, exec, attach | Read-write `/var/run/docker.sock` is root on the host; anyone who gets Portainer admin gets root |
+  | `proxy` | Browse, inspect, read logs | Every write is refused, so Portainer is a viewer only |
+
+  A second proxy with `POST=1` for Portainer is deliberately not offered:
+  Portainer needs almost every write endpoint (`CONTAINERS`, `IMAGES`, `EXEC`,
+  `POST`, ...), so it would be about as powerful as the socket with one more
+  moving part. Protect the Portainer login instead.
+- Netdata names container cgroups (`cgroup_<name>` charts) and runs its
+  `docker` collector through the proxy (`DOCKER_HOST`). Its go.d container
+  service discovery (`sd:docker`) only reads the unix socket, so Netdata logs
+  `failed to connect to the docker API at unix:///var/run/docker.sock` once at
+  start and does not auto-create jobs for apps running in containers.
+- Portainer's `-H` only seeds the local environment of a fresh instance.
+  Switching an existing install to `proxy` leaves its environment on
+  `unix:///var/run/docker.sock`, which is no longer mounted: change the
+  environment URL to `tcp://socket-proxy:2375` in Portainer.
+- Portainer (2.43+, and 2.39.x LTS from at least 2.39.9) needs a one-time setup token to create the first
   administrator on a new instance; read it with `docker logs portainer`.
 - Portainer and Uptime Kuma migrate their databases when a newer image starts
   and can't be rolled back afterwards. Back up the `portainer_data` and

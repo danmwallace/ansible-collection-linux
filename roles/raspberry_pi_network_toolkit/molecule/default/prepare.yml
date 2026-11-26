@@ -1,0 +1,32 @@
+---
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Ensure git, sudo and the CA bundle are installed
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - git
+          - sudo
+        update_cache: true
+
+    - name: Ensure the toolkit user exists
+      ansible.builtin.user:
+        name: pi
+        shell: /bin/bash
+
+    # rpi-toolkit's checkout (#44): cloned from the old drwetter URL, on the
+    # 3.3dev branch at v3.2.1-276-g79db2763. The role must move it to the
+    # pinned release tag.
+    - name: Ensure testssl.sh is cloned on the 3.3dev branch as on rpi-toolkit
+      ansible.builtin.git:
+        repo: https://github.com/drwetter/testssl.sh.git
+        dest: /opt/testssl.sh
+        version: 3.3dev
+
+    # The git module would detach HEAD at the commit; rpi-toolkit is on the branch.
+    - name: Ensure the checkout sits at rpi-toolkit's commit
+      ansible.builtin.command:  # noqa command-instead-of-module
+        cmd: git -C /opt/testssl.sh reset --hard 79db2763
+      changed_when: true

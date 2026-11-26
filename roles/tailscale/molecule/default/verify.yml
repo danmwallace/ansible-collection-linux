@@ -1,0 +1,76 @@
+---
+- name: Verify
+  hosts: molecule
+  gather_facts: false
+  vars:
+    tailscale_t_keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
+  tasks:
+    - name: Stat the keyring after converge
+      ansible.builtin.stat:
+        path: "{{ tailscale_t_keyring }}"
+        checksum_algorithm: sha256
+      register: tailscale_t_key
+
+    - name: Read the checksum recorded before converge
+      ansible.builtin.slurp:
+        src: /root/tailscale-keyring.sha256
+      register: tailscale_t_seed
+
+    - name: Identify the keyring format
+      ansible.builtin.command:
+        cmd: file -b {{ tailscale_t_keyring }}
+      register: tailscale_t_key_type
+      changed_when: false
+
+    - name: Assert the binary keyring was left as it was
+      ansible.builtin.assert:
+        that:
+          - tailscale_t_key.stat.checksum == (tailscale_t_seed.content | b64decode | trim)
+          - tailscale_t_key.stat.mode == '0644'
+          - "'OpenPGP Public Key' in tailscale_t_key_type.stdout"
+          - "'PGP public key block' not in tailscale_t_key_type.stdout"
+        fail_msg: "keyring is now: {{ tailscale_t_key_type.stdout }}"
+
+    - name: Refresh only the Tailscale apt source
+      ansible.builtin.command:  # noqa command-instead-of-module
+        cmd: >-
+          apt-get update
+          -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/tailscale.list
+          -o Dir::Etc::sourceparts=-
+          -o APT::Get::List-Cleanup=0
+      register: tailscale_t_apt
+      changed_when: false
+
+    - name: Assert apt trusts the Tailscale repository signature
+      ansible.builtin.assert:
+        that:
+          - "'NO_PUBKEY' not in tailscale_t_apt.stderr"
+          - "'not signed' not in tailscale_t_apt.stderr"
+          - "'unsupported filetype' not in tailscale_t_apt.stderr"
+          - "'pkgs.tailscale.com' in tailscale_t_apt.stdout"
+        fail_msg: "{{ tailscale_t_apt.stdout }}\n{{ tailscale_t_apt.stderr }}"
+
+    - name: Check tailscaled is enabled
+      ansible.builtin.command:  # noqa command-instead-of-module
+        cmd: systemctl is-enabled tailscaled
+      register: tailscale_t_enabled
+      changed_when: false
+
+    - name: Check tailscaled is active
+      ansible.builtin.command:  # noqa command-instead-of-module
+        cmd: systemctl is-active tailscaled
+      register: tailscale_t_active
+      changed_when: false
+
+    - name: Read the forwarding sysctls
+      ansible.builtin.command:
+        cmd: sysctl -n net.ipv4.ip_forward net.ipv6.conf.all.forwarding
+      register: tailscale_t_sysctl
+      changed_when: false
+
+    - name: Assert the service runs and forwarding is on
+      ansible.builtin.assert:
+        that:
+          - tailscale_t_enabled.stdout == 'enabled'
+          - tailscale_t_active.stdout == 'active'
+          - tailscale_t_sysctl.stdout_lines == ['1', '1']

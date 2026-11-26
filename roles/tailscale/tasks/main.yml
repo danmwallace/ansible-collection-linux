@@ -10,10 +10,16 @@
     - net.ipv4.ip_forward
     - net.ipv6.conf.all.forwarding
 
-- name: Download Tailscale GPG signing key
+# The .noarmor.gpg file is the binary keyring Tailscale's install docs put in
+# /usr/share/keyrings. The plain .gpg URL serves the ASCII-armored key, which
+# differs from it byte for byte, so the role replaced the keyring on hosts set
+# up from the docs. The checksum lets get_url skip a matching file before any
+# request; without it, check mode only sends HEAD and always reports changed.
+- name: Ensure the Tailscale apt signing key is installed
   ansible.builtin.get_url:
-    url: "https://pkgs.tailscale.com/stable/{{ _tailscale_repo_os }}/{{ ansible_distribution_release }}.gpg"
+    url: "https://pkgs.tailscale.com/stable/{{ _tailscale_repo_os }}/{{ ansible_distribution_release }}.noarmor.gpg"
     dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    checksum: "{{ tailscale_apt_key_checksum }}"
     mode: "0644"
   vars:
     _tailscale_repo_os: "{{ 'ubuntu' if ansible_distribution == 'Ubuntu' else 'debian' }}"

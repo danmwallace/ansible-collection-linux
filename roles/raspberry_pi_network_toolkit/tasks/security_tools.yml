@@ -10,14 +10,23 @@
       - hydra
       - john
       - hashcat
+      # hexdump, which testssl.sh refuses to start without; optional priority,
+      # so minimal images lack it.
+      - bsdextrautils
     state: present
   become: true
 
-- name: Install testssl.sh
+# The git module fetches tags before it checks out `version`, so an existing
+# clone on another branch (for example 3.3dev) moves to the release tag.
+# force: this is a tool checkout, so local edits are discarded rather than
+# failing the run. The repo moved from drwetter/ to testssl/; the module
+# updates an existing clone's origin URL.
+- name: Ensure testssl.sh is checked out at the pinned release
   ansible.builtin.git:
-    repo: https://github.com/drwetter/testssl.sh.git
+    repo: https://github.com/testssl/testssl.sh.git
     dest: /opt/testssl.sh
-    version: v3.2
+    version: "{{ raspberry_pi_network_toolkit_testssl_version }}"
+    force: true
   become: true
 
 - name: Create testssl symlink

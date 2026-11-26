@@ -28,6 +28,7 @@ routes without re-authenticating, keeping the role idempotent.
 | `tailscale_hostname` | str | no | `""` | Device name in the Tailscale admin console. Defaults to system hostname. |
 | `tailscale_accept_routes` | bool | no | `false` | Accept routes advertised by other subnet routers on the tailnet. |
 | `tailscale_exit_node` | bool | no | `false` | Advertise this node as a Tailscale exit node. |
+| `tailscale_apt_key_checksum` | str | no | `sha256:3e03dacf…` | sha256 of the binary apt signing key. A matching keyring is not re-downloaded; a mismatching download fails the role. See Notes. |
 
 ## Dependencies
 
@@ -51,7 +52,9 @@ None declared in `meta/main.yml`. Requires `ansible.posix` at the controller
 
 1. Enables `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` via `sysctl`,
    persisted to `/etc/sysctl.d/99-tailscale.conf`.
-2. Downloads the Tailscale GPG key to `/usr/share/keyrings/tailscale-archive-keyring.gpg`.
+2. Downloads Tailscale's binary (`.noarmor.gpg`) signing key to
+   `/usr/share/keyrings/tailscale-archive-keyring.gpg`, the same file Tailscale's
+   install instructions create, so hosts set up by hand are left unchanged.
 3. Adds the official Tailscale stable apt repository for the host's OS release.
 4. Installs the `tailscale` package via apt.
 5. Enables and starts the `tailscaled` systemd service.
@@ -70,6 +73,15 @@ None declared in `meta/main.yml`. Requires `ansible.posix` at the controller
   `192.168.70.0/24` via `10.10.99.1`), ensure the host's default gateway routes
   traffic to that subnet. The role does not configure static routes — those are
   handled at the network or OS level.
+
+- The signing key is pinned by `tailscale_apt_key_checksum`. If Tailscale ever
+  rotates it, the role fails at "Ensure the Tailscale apt signing key is
+  installed" with a checksum mismatch. Check the new key out of band, then set
+  the new value:
+  `curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | sha256sum`.
+- Releases before 2.0.0 downloaded the ASCII-armored `<release>.gpg` into the
+  `.gpg` keyring path. The first run of a newer release replaces it with the
+  binary key and reports changed once.
 
 ## License
 

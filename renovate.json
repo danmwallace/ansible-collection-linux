@@ -78,6 +78,13 @@
       "groupName": "molecule test images",
       "additionalBranchPrefix": "",
       "commitMessageSuffix": ""
+    },
+    {
+      "description": "raspberry_pi_network_toolkit tracks the Portainer 2.39 LTS line; moving to a newer LTS line (2.45.x) is a deliberate bump, so only 2.39.x patches are proposed",
+      "matchPackageNames": [
+        "portainer/portainer-ce"
+      ],
+      "allowedVersions": "/^2\\.39\\./"
     }
   ]
 }
