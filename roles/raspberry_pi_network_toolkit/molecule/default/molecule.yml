@@ -34,5 +34,11 @@ scenario:
     - prepare
     - converge
     - idempotence
+    # side_effect puts back rpi-toolkit's old testssl.sh origin, then the whole
+    # role runs under --check against the converged host, as in the rollout's
+    # check-mode review (#44); converge again before verify.
+    - side_effect
+    - check
+    - converge
     - verify
     - destroy
