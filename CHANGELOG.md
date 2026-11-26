@@ -7,6 +7,20 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-26
+
+### Fixed
+
+- `raspberry_pi_network_toolkit`: `--check` failed at the testssl.sh task on
+  hosts whose clone predates the project's move to `github.com/testssl`
+  ("couldn't find remote ref v3.2.5"). The old `drwetter/` URL does not serve
+  the newer release tags, and in check mode the git module queries the
+  existing origin instead of re-pointing it. Origin is now set with
+  `community.general.git_config` first, which check mode reports as changed;
+  the checkout is skipped only in that one check run. Real runs were not
+  affected. The molecule scenario now runs the whole role under `--check`
+  against a converged host with the old origin.
+
 ## [2.0.0] - 2026-11-26
 
 Major release because of the breaking `cockpit` allowlist change below (#39).

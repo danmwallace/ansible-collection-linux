@@ -1,0 +1,12 @@
+---
+# rpi-toolkit's testssl.sh clone predates the move to github.com/testssl, so
+# its origin is the old drwetter/ URL, which does not serve the newer release
+# tags. The molecule check step that follows must pass against it.
+- name: Side effect
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Point testssl.sh's origin back at the old drwetter URL
+      ansible.builtin.command:  # noqa command-instead-of-module
+        cmd: git -C /opt/testssl.sh remote set-url origin https://github.com/drwetter/testssl.sh.git
+      changed_when: true

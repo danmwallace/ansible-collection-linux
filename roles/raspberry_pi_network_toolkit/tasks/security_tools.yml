@@ -16,18 +16,42 @@
     state: present
   become: true
 
-# The git module fetches tags before it checks out `version`, so an existing
-# clone on another branch (for example 3.3dev) moves to the release tag.
-# force: this is a tool checkout, so local edits are discarded rather than
-# failing the run. The repo moved from drwetter/ to testssl/; the module
-# updates an existing clone's origin URL.
 - name: Ensure testssl.sh is checked out at the pinned release
-  ansible.builtin.git:
-    repo: https://github.com/testssl/testssl.sh.git
-    dest: /opt/testssl.sh
-    version: "{{ raspberry_pi_network_toolkit_testssl_version }}"
-    force: true
+  vars:
+    raspberry_pi_network_toolkit_testssl_repo: https://github.com/testssl/testssl.sh.git
   become: true
+  block:
+    - name: Check for an existing testssl.sh checkout
+      ansible.builtin.stat:
+        path: /opt/testssl.sh/.git
+      register: raspberry_pi_network_toolkit_testssl_git
+
+    # The project moved from drwetter/ to testssl/, and the old URL does not
+    # serve the newer release tags. The git module re-points origin itself, but
+    # only in a real run; under --check it queries the old origin and fails
+    # ("couldn't find remote ref"). Re-pointing it here reports the change in
+    # check mode as well.
+    - name: Ensure the testssl.sh checkout's origin is the testssl/ repository
+      community.general.git_config:
+        scope: local
+        repo: /opt/testssl.sh
+        name: remote.origin.url
+        value: "{{ raspberry_pi_network_toolkit_testssl_repo }}"
+      register: raspberry_pi_network_toolkit_testssl_origin
+      when: raspberry_pi_network_toolkit_testssl_git.stat.exists
+
+    # The git module fetches tags before it checks out `version`, so an existing
+    # clone on another branch (for example 3.3dev) moves to the release tag.
+    # force: this is a tool checkout, so local edits are discarded rather than
+    # failing the run. Skipped only under --check when origin was just
+    # re-pointed above, because check mode would still query the old URL.
+    - name: Ensure the testssl.sh release tag is checked out
+      ansible.builtin.git:
+        repo: "{{ raspberry_pi_network_toolkit_testssl_repo }}"
+        dest: /opt/testssl.sh
+        version: "{{ raspberry_pi_network_toolkit_testssl_version }}"
+        force: true
+      when: not (ansible_check_mode and raspberry_pi_network_toolkit_testssl_origin is changed)
 
 - name: Create testssl symlink
   ansible.builtin.file:
