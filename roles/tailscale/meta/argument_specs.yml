@@ -52,3 +52,17 @@ argument_specs:
         type: bool
         required: false
         default: false
+      tailscale_apt_key_checksum:
+        description:
+          - Checksum (C(sha256:<hex>)) of Tailscale's binary apt signing key,
+            downloaded from C(<release>.noarmor.gpg) to
+            C(/usr/share/keyrings/tailscale-archive-keyring.gpg).
+          - A keyring that already matches is left alone without a download,
+            so C(--check) reports it as unchanged. A downloaded key that does
+            not match fails the role, which is what you want if the key is
+            ever rotated; verify the new key, then update this value.
+          - An empty string skips the comparison; check mode then always
+            reports the task as changed.
+        type: str
+        required: false
+        default: "sha256:3e03dacf222698c60b8e2f990b809ca1b3e104de127767864284e6c228f1fb39"

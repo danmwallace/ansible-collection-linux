@@ -1,0 +1,17 @@
+---
+- name: Destroy
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure the test container is absent
+      containers.podman.podman_container:
+        name: linux-rpi-toolkit-instance
+        state: absent
+
+    - name: Ensure the nested Docker storage volumes are absent
+      containers.podman.podman_volume:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - linux-rpi-toolkit-docker
+        - linux-rpi-toolkit-containerd

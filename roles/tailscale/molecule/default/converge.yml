@@ -1,0 +1,12 @@
+---
+- name: Converge
+  hosts: molecule
+  gather_facts: true
+  tasks:
+    # No auth key: the role installs and starts tailscaled but skips login.
+    - name: Apply tailscale with test values
+      ansible.builtin.include_role:
+        name: danmwallace.linux.tailscale
+      vars:
+        tailscale_advertise_routes: 192.0.2.0/24
+        tailscale_hostname: molecule-tailscale

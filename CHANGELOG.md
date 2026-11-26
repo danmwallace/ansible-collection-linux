@@ -7,6 +7,10 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-26
+
+Major release because of the breaking `cockpit` allowlist change below (#39).
+
 ### Changed
 
 - `cockpit`: `cockpit_allowed_cidrs` now scopes TCP 9090 on both backends: one firewalld
@@ -18,9 +22,10 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
   removed unless `10.0.0.0/8` is in the allowlist.
 - `raspberry_pi_network_toolkit`: image and version pins raised to the latest
   upstream releases (#18, #25, #26).
-  - `portainer_version` 2.39.4 → 2.45.4. Portainer migrates its database on
-    start; back up `portainer_data` first. Since 2.43 a fresh instance needs
-    the one-time setup token from its log to create the first administrator.
+  - `portainer_version` 2.39.4 → 2.39.9, the newest release of the 2.39 LTS
+    line the role tracks (#44); moving to the 2.45 LTS line will be a
+    deliberate bump. Portainer migrates its database on start; back up
+    `portainer_data` first.
   - `netdata_version` v2.5.3 → v2.13.0.
   - `uptime_kuma_version` 2.4.0 → 2.5.12.
   - `portainer_socket_proxy_version` "0.4.2" → "3.4@sha256:027f9fa5…". The
@@ -33,11 +38,39 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
     installs the distribution's `docker-compose-plugin`).
   - The compose template no longer carries its own fallback pins; it uses the
     role defaults only.
+- `raspberry_pi_network_toolkit`: Portainer is back on a read-write
+  `/var/run/docker.sock` by default (#44). 1.12.0 moved it behind the
+  `POST=0` socket proxy, which refuses every write, so Portainer could no
+  longer start, stop or deploy anything; it also set `DOCKER_HOST`, which
+  Portainer ignores. The new `raspberry_pi_network_toolkit_portainer_docker_access`
+  (`socket` | `proxy`) chooses; `proxy` now passes `-H tcp://socket-proxy:2375`
+  so a fresh Portainer really uses the proxy, read-only. Netdata stays on the
+  proxy. See the role README for the trade-off.
+- `raspberry_pi_network_toolkit`: testssl.sh is checked out at the release tag
+  in `raspberry_pi_network_toolkit_testssl_version` (default `v3.2.5`) from
+  its new home, `github.com/testssl/testssl.sh`, with `force: true`. An
+  existing clone on another branch (rpi-toolkit was on `3.3dev`) moves to the
+  tag; local edits in the checkout are discarded.
+- `raspberry_pi_network_toolkit`: removed `vars/main.yml`. It held an unused
+  copy of the compose services under the play-wide name `services`, which no
+  longer matched the template.
+- `tailscale`: the apt signing key is downloaded from Tailscale's
+  `<release>.noarmor.gpg` and pinned by the new `tailscale_apt_key_checksum`.
+  A host whose keyring came from an older release of this role (armored key)
+  gets the binary key once, reported as changed.
 
 ### Added
 
 - `cockpit_manage_firewall` (default `true`): set `false` to skip the allowlist check and
   every firewall task when something else scopes 9090.
+- `raspberry_pi_network_toolkit_portainer_docker_access` (default `socket`),
+  `raspberry_pi_network_toolkit_testssl_version` (default `v3.2.5`) and
+  `tailscale_apt_key_checksum`.
+- Molecule scenarios for `raspberry_pi_network_toolkit` (Docker runs inside
+  the test container: the stack is deployed, Portainer runs and removes a
+  container through its API, the proxy is checked to refuse writes, Netdata
+  names containers through it, and the proxy mode is tested read-only) and
+  `tailscale` (starts from a host set up by Tailscale's install docs).
 
 ### Deprecated
 
@@ -55,6 +88,17 @@ and this collection adheres to [Semantic Versioning](https://semver.org/spec/v2.
   `atomic_container`, else `true`) skip the installs; the roles then check
   that `sftp` / `ssh` (mikrotik_backup) or `certbot` (cloudflare_ssl) are on
   the `PATH` and fail naming what the OS image must provide.
+- `tailscale`: "Download Tailscale GPG signing key" reported changed under
+  `--check` on every run, and a real run would have broken apt on hosts set up
+  from Tailscale's docs (#44). The role fetched the ASCII-armored
+  `<release>.gpg` into `/usr/share/keyrings/tailscale-archive-keyring.gpg`,
+  replacing the binary keyring there, after which `apt-get update` failed.
+  Separately, `get_url` without a checksum only sends HEAD in check mode and
+  always reports changed. The key was not rotated.
+- `raspberry_pi_network_toolkit`: `version: v3.2` for testssl.sh named a tag
+  that doesn't exist, so the task failed or reported changed on every run.
+- `raspberry_pi_network_toolkit`: installs `bsdextrautils`; testssl.sh refuses
+  to start without `hexdump`, which minimal images lack.
 
 ## [1.12.0] - 2026-11-16
 

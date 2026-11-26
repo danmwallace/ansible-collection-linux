@@ -25,12 +25,22 @@ services:
   portainer:
     image: portainer/portainer-ce:{{ portainer_version }}
     container_name: portainer
+{% if raspberry_pi_network_toolkit_portainer_docker_access == 'proxy' %}
+    # Read-only: the proxy refuses every POST/PUT/DELETE (POST=0). Portainer
+    # ignores DOCKER_HOST; -H sets the URL of the local environment it creates
+    # on first start.
+    command: -H tcp://socket-proxy:2375
     depends_on:
       - socket-proxy
-    environment:
-      DOCKER_HOST: tcp://socket-proxy:2375
     volumes:
       - portainer_data:/data
+{% else %}
+    # Read-write socket: Portainer manages containers, so it needs the write
+    # endpoints the read-only proxy refuses. This is root-equivalent access.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+{% endif %}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy_network"
@@ -41,7 +51,9 @@ services:
     networks:
       - default
       - proxy_network
+{% if raspberry_pi_network_toolkit_portainer_docker_access == 'proxy' %}
       - socket_proxy_net
+{% endif %}
     restart: unless-stopped
 
   netdata:

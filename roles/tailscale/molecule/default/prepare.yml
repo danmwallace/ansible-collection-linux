@@ -1,0 +1,48 @@
+---
+# Reproduces rpi-toolkit as it was set up from Tailscale's install docs (#44):
+# binary keyring, the installer's tailscale.list, tailscale installed. The
+# molecule check step then runs the role in --check against that state, and
+# verify asserts the role left the keyring byte for byte as it was.
+- name: Prepare
+  hosts: molecule
+  gather_facts: false
+  vars:
+    tailscale_t_keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
+  tasks:
+    - name: Ensure the CA bundle and file(1) are installed
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - file
+        update_cache: true
+
+    - name: Ensure the binary Tailscale keyring from the install docs is present
+      ansible.builtin.get_url:
+        url: https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
+        dest: "{{ tailscale_t_keyring }}"
+        mode: "0644"
+
+    - name: Ensure the apt source the Tailscale installer writes is present
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/tailscale.list
+        content: |
+          # Tailscale packages for ubuntu noble
+          deb [signed-by={{ tailscale_t_keyring }}] https://pkgs.tailscale.com/stable/ubuntu noble main
+        mode: "0644"
+
+    - name: Ensure tailscale is installed as on the host
+      ansible.builtin.apt:
+        name: tailscale
+        update_cache: true
+
+    - name: Read the pre-seeded keyring checksum
+      ansible.builtin.stat:
+        path: "{{ tailscale_t_keyring }}"
+        checksum_algorithm: sha256
+      register: tailscale_t_seed
+
+    - name: Record the pre-seeded keyring checksum for verify
+      ansible.builtin.copy:
+        dest: /root/tailscale-keyring.sha256
+        content: "{{ tailscale_t_seed.stat.checksum }}\n"
+        mode: "0600"

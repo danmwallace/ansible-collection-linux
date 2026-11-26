@@ -49,6 +49,30 @@ argument_specs:
         type: str
         required: false
         default: "v5.8.0"
+      raspberry_pi_network_toolkit_portainer_docker_access:
+        description:
+          - How Portainer reaches the Docker API.
+          - C(socket) mounts C(/var/run/docker.sock) read-write into Portainer,
+            so it can start, stop, deploy, exec and attach. That is
+            root-equivalent access to the host.
+          - C(proxy) sends Portainer through the read-only socket proxy
+            (C(POST=0)) that Netdata uses. Portainer can browse and inspect,
+            but every write call is refused.
+          - Netdata always uses the read-only proxy.
+        type: str
+        required: false
+        choices:
+          - socket
+          - proxy
+        default: socket
+      raspberry_pi_network_toolkit_testssl_version:
+        description:
+          - testssl.sh release tag checked out in C(/opt/testssl.sh). Must be a
+            tag that exists upstream (for example C(v3.2.5)); an existing
+            checkout on another branch is moved to it, discarding local edits.
+        type: str
+        required: false
+        default: v3.2.5
       portainer_socket_proxy_version:
         description:
           - Image reference suffix for C(ghcr.io/tecnativa/docker-socket-proxy),

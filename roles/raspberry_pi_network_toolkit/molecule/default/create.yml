@@ -1,0 +1,20 @@
+---
+- name: Create
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    # The role installs Docker and deploys the compose stack for real, so the
+    # instance runs its own dockerd: privileged, with /var/lib/docker and
+    # /var/lib/containerd on volumes because overlayfs cannot stack on the
+    # container's own overlay root.
+    - name: Ensure the systemd test container is running
+      containers.podman.podman_container:
+        name: linux-rpi-toolkit-instance
+        image: docker.io/jrei/systemd-ubuntu:noble
+        privileged: true
+        systemd: always
+        volumes:
+          - linux-rpi-toolkit-docker:/var/lib/docker
+          - linux-rpi-toolkit-containerd:/var/lib/containerd
+        state: started
+        command: /sbin/init

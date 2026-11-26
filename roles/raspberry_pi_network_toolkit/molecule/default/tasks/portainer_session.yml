@@ -1,0 +1,61 @@
+---
+# Initialise Portainer's first administrator on a fresh portainer_data volume
+# and log in. Portainer refuses admin init 5 minutes after it starts, so restart
+# it first and use the setup token from that start's log.
+- name: Restart Portainer to reopen the admin-init window
+  ansible.builtin.command:
+    cmd: docker restart portainer
+  changed_when: true
+
+- name: Read Portainer's address on the compose default network
+  ansible.builtin.command:
+    cmd: >-
+      docker inspect portainer --format
+      '{{ "{{" }} (index .NetworkSettings.Networks "docker-compose_default").IPAddress {{ "}}" }}'
+  register: raspberry_pi_network_toolkit_t_portainer_ip
+  changed_when: false
+
+- name: Wait for Portainer to answer
+  ansible.builtin.uri:
+    url: "http://{{ raspberry_pi_network_toolkit_t_portainer_ip.stdout }}:9000/api/system/status"
+  register: raspberry_pi_network_toolkit_t_portainer_status
+  until: raspberry_pi_network_toolkit_t_portainer_status.status == 200
+  retries: 30
+  delay: 2
+
+- name: Read Portainer's setup token from the log of this start
+  ansible.builtin.shell:
+    # 2.39.x colours the value (setup_token=<ESC>[0m<token>), so strip ANSI first.
+    cmd: >-
+      set -o pipefail && docker logs portainer 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
+      | grep -o 'setup_token=[0-9a-f]\{64\}' | tail -n 1 | cut -d= -f2
+    executable: /bin/bash
+  register: raspberry_pi_network_toolkit_t_setup_token
+  changed_when: false
+
+- name: Initialise the Portainer administrator
+  ansible.builtin.uri:
+    url: "http://{{ raspberry_pi_network_toolkit_t_portainer_ip.stdout }}:9000/api/users/admin/init"
+    method: POST
+    headers:
+      X-Setup-Token: "{{ raspberry_pi_network_toolkit_t_setup_token.stdout }}"
+    body_format: json
+    body:
+      Username: admin
+      Password: molecule-test-password  # molecule-test-only: fake value, not a real credential
+  changed_when: true
+
+- name: Log in to Portainer
+  ansible.builtin.uri:
+    url: "http://{{ raspberry_pi_network_toolkit_t_portainer_ip.stdout }}:9000/api/auth"
+    method: POST
+    body_format: json
+    body:
+      Username: admin
+      Password: molecule-test-password  # molecule-test-only: fake value, not a real credential
+  register: raspberry_pi_network_toolkit_t_auth
+
+- name: Record the Portainer API base URL and token
+  ansible.builtin.set_fact:
+    raspberry_pi_network_toolkit_t_api: "http://{{ raspberry_pi_network_toolkit_t_portainer_ip.stdout }}:9000/api"
+    raspberry_pi_network_toolkit_t_jwt: "{{ raspberry_pi_network_toolkit_t_auth.json.jwt }}"

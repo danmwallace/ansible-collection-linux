@@ -27,6 +27,24 @@ monitoring_ports:
 # Directory for custom toolkit scripts
 toolkit_scripts_dir: /opt/network-toolkit
 
+# How Portainer reaches the Docker API:
+#   socket - mount /var/run/docker.sock read-write (default). Portainer can
+#            start/stop/deploy/exec, which is what it is for, but it holds
+#            root-equivalent access to the host.
+#   proxy  - go through the read-only socket proxy (POST=0) that Netdata
+#            uses. Portainer can browse and inspect but every write is refused.
+# A separate POST=1 proxy is not offered: Portainer needs nearly every write
+# endpoint (containers, images, exec, attach), so it would grant about the
+# same power as the socket with one more container to maintain.
+raspberry_pi_network_toolkit_portainer_docker_access: socket
+
+# testssl.sh release tag checked out in /opt/testssl.sh. Must be a tag that
+# exists upstream (v3.2 does not; releases are v3.2.0, v3.2.1, ...).
+# The versioning regex keeps Renovate on release tags and off the
+# v3.3dev-snapshot-* development tags.
+# renovate: datasource=github-tags depName=testssl/testssl.sh versioning=regex:^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)$
+raspberry_pi_network_toolkit_testssl_version: v3.2.5
+
 # Service hostnames for Traefik reverse proxy
 portainer_hostname: "portainer.example.com"
 netdata_hostname: "netdata.example.com"
@@ -35,8 +53,11 @@ uptime_kuma_hostname: "uptime.example.com"
 # Container image versions
 # NOTE: Portainer migrates its database on start and cannot be downgraded
 # afterwards; back up the portainer_data volume before changing this.
+# The role tracks a Portainer LTS line (2.39.x), not the newest release:
+# patch updates come in automatically, moving to a newer LTS line (2.45.x,
+# also LTS) is a deliberate bump. renovate.json holds Renovate to 2.39.x.
 # renovate: datasource=docker depName=portainer/portainer-ce
-portainer_version: '2.45.4'
+portainer_version: '2.39.9'
 # NOTE: uptime-kuma 2.x is a major version bump from 1.x and requires a data migration.
 # Review https://github.com/louislam/uptime-kuma/wiki before upgrading existing installs.
 # renovate: datasource=docker depName=louislam/uptime-kuma
